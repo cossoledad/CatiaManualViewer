@@ -180,7 +180,13 @@ class ManualIndex:
         return report
 
     def search(
-        self, query: str, module: str | None = None, limit: int = 30, *, match: str | None = None
+        self,
+        query: str,
+        module: str | None = None,
+        limit: int = 30,
+        *,
+        match: str | None = None,
+        modules: list[str] | tuple[str, ...] | None = None,
     ) -> list[SearchHit]:
         # Plain user input cannot inject FTS operators or cause MATCH syntax errors.
         if match is None:
@@ -197,6 +203,12 @@ class ManualIndex:
         if module:
             sql += " AND d.module=?"
             params.append(module)
+        if modules is not None:
+            if not modules:
+                return []
+            selected = list(dict.fromkeys(modules))
+            sql += " AND d.module IN (" + ",".join("?" for _ in selected) + ")"
+            params.extend(selected)
         sql += " ORDER BY (lower(d.title)=?) DESC,score,d.path LIMIT ?"
         params.extend([" ".join(query.lower().split()), max(1, min(limit, 200))])
         return [SearchHit(**dict(row)) for row in self.connection.execute(sql, params)]

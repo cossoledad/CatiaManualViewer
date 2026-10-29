@@ -15,7 +15,28 @@ model_dir = 'data/models'
 automatic = true
 selection_delay_ms = 350
 max_selection_chars = 3000
-# Optional LibreTranslate-compatible endpoint. Install .[translation] first.
-# provider = 'libretranslate'
-# endpoint = 'http://127.0.0.1:5000/translate'
-# api_key_env = 'CATIA_TRANSLATION_API_KEY'
+
+[translation.profiles.mymemory]
+endpoint = 'https://api.mymemory.translated.net/get'
+api_key_env = 'MYMEMORY_API_KEY'
+
+[translation.profiles.deepl]
+endpoint = 'https://api-free.deepl.com/v2/translate'
+api_key_env = 'DEEPL_API_KEY'
+
+[translation.profiles.libretranslate]
+endpoint = 'http://127.0.0.1:5000/translate'
+api_key_env = 'LIBRETRANSLATE_API_KEY'
+
+[translation.profiles.chat-completions]
+endpoint = ''
+model = ''
+api_key_env = 'CATIA_TRANSLATION_API_KEY'
+
+[appearance]
+font_size = 10
+reader_zoom = 100
+show_tools = true
+remember_window = true
+window_width = 1480
+window_height = 940

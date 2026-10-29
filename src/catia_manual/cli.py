@@ -7,6 +7,7 @@ from dataclasses import asdict
 from pathlib import Path
 
 from catia_manual.config import load_settings
+from catia_manual.core.catalog import ManualCatalog
 from catia_manual.core.index import ManualIndex
 from catia_manual.core.parser import ManualParser
 from catia_manual.core.search import SearchService
@@ -33,6 +34,7 @@ def main(argv: list[str] | None = None) -> int:
     search = sub.add_parser("search", help="搜索标题和正文")
     search.add_argument("query")
     search.add_argument("--module")
+    search.add_argument("--category", help="功能分类名称或 ID，如 mechanical-design")
     search.add_argument("--limit", type=int, default=20)
     search.add_argument("--explain", action="store_true", help="同时输出中文查询展开方式")
     for name in ("read", "toc", "examples"):
@@ -45,6 +47,7 @@ def main(argv: list[str] | None = None) -> int:
     translate.add_argument("text")
     translate.add_argument("--target", default="zh-CN")
     sub.add_parser("stats")
+    sub.add_parser("catalog", help="输出功能分类和手册名称")
     gui = sub.add_parser("gui")
     gui.add_argument("--open", dest="open_target", help="打开本地文档路径或 CATIA 文档服务 URL")
     args = parser.parse_args(argv)
@@ -95,6 +98,8 @@ def main(argv: list[str] | None = None) -> int:
             from catia_manual.gui.app import run
 
             return run(settings, args.open_target)
+        elif args.command == "catalog":
+            emit([asdict(group) for group in ManualCatalog(settings.root).categories])
         else:
             with ManualIndex(settings.database, settings.root) as repository:
                 if args.command == "index":
@@ -107,8 +112,13 @@ def main(argv: list[str] | None = None) -> int:
                     emit(result)
                     return 1 if result["errors"] else 0
                 elif args.command == "search":
+                    modules = (
+                        ManualCatalog(settings.root).category(args.category).modules
+                        if args.category
+                        else None
+                    )
                     response = SearchService(repository, settings.translation).search(
-                        args.query, args.module, args.limit
+                        args.query, args.module, args.limit, modules=modules
                     )
                     emit(
                         asdict(response) if args.explain else [asdict(hit) for hit in response.hits]

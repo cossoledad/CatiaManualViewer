@@ -16,7 +16,14 @@ class SearchService:
     def __init__(self, index: ManualIndex, translation_config: dict):
         self.index, self.translation_config = index, translation_config
 
-    def search(self, query: str, module: str | None = None, limit: int = 30) -> SearchResponse:
+    def search(
+        self,
+        query: str,
+        module: str | None = None,
+        limit: int = 30,
+        *,
+        modules: list[str] | tuple[str, ...] | None = None,
+    ) -> SearchResponse:
         plan = plan_query(query)
         if plan.unknown:
             if self.translation_config.get("provider", "glossary") == "glossary":
@@ -39,5 +46,9 @@ class SearchService:
                 except Exception as exc:
                     plan.notes.append(f"查询翻译不可用：{exc}")
         # Do not silently ignore unknown concepts and return a misleading partial search.
-        hits = [] if plan.unknown else self.index.search(query, module, limit, match=plan.match)
+        hits = (
+            []
+            if plan.unknown
+            else self.index.search(query, module, limit, match=plan.match, modules=modules)
+        )
         return SearchResponse(hits, plan)

@@ -6,7 +6,7 @@ from collections import OrderedDict
 from pathlib import Path
 
 from PySide6.QtCore import QEvent, QObject, QRunnable, Qt, QThreadPool, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QDesktopServices, QFont, QKeySequence
+from PySide6.QtGui import QAction, QDesktopServices, QFont
 from PySide6.QtWebEngineCore import (
     QWebEnginePage,
     QWebEngineProfile,
@@ -17,35 +17,23 @@ from PySide6.QtWebEngineCore import (
 from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QApplication,
-    QCheckBox,
-    QComboBox,
-    QHBoxLayout,
-    QLabel,
-    QLineEdit,
-    QListWidget,
     QListWidgetItem,
     QMainWindow,
-    QMenu,
     QMessageBox,
-    QPushButton,
-    QSplitter,
-    QTabWidget,
-    QTextBrowser,
-    QToolButton,
-    QTreeWidget,
     QTreeWidgetItem,
-    QVBoxLayout,
     QWidget,
 )
 
-from catia_manual.config import Settings, load_settings, save_translation
+from catia_manual.config import Settings, load_settings, save_settings, save_translation
 from catia_manual.core.index import ManualIndex
 from catia_manual.core.navigation import Location, NavigationHistory
 from catia_manual.core.parser import ManualParser
 from catia_manual.core.paths import resolve_link
 from catia_manual.core.search import SearchService
 from catia_manual.core.translation import TranslationService, make_provider
-from catia_manual.gui.settings import TranslationSettings
+from catia_manual.gui.settings import GlobalSettings
+from catia_manual.gui.style import APP_NAME, app_icon
+from catia_manual.gui.workspace import WorkspaceUI
 from catia_manual.integrations.catia import CatiaLauncher
 
 
@@ -92,6 +80,12 @@ class ReaderPage(QWebEnginePage):
     def acceptNavigationRequest(self, url, navigation_type, is_main_frame):
         if (
             is_main_frame
+            and navigation_type == QWebEnginePage.NavigationType.NavigationTypeBackForward
+        ):
+            # Application history owns navigation; Chromium must not replay a second history.
+            return False
+        if (
+            is_main_frame
             and navigation_type == QWebEnginePage.NavigationType.NavigationTypeLinkClicked
         ):
             self.navigate.emit(url)
@@ -99,7 +93,7 @@ class ReaderPage(QWebEnginePage):
         return True
 
 
-class MainWindow(QMainWindow):
+class MainWindow(WorkspaceUI, QMainWindow):
     def __init__(self, settings: Settings, initial_target: str | None = None):
         super().__init__()
         self.settings = settings
@@ -123,84 +117,20 @@ class MainWindow(QMainWindow):
         self.selection_timer = QTimer(self)
         self.selection_timer.setSingleShot(True)
         self.selection_timer.timeout.connect(self.translate_selection)
-        self.setWindowTitle("CATIA 文档阅读器 · V5-6R2023")
-        self.resize(1480, 940)
-        self.setMinimumSize(1000, 650)
+        self.build_interface()
+        self.update_history_actions()
+        if initial_target:
+            QTimer.singleShot(0, lambda: self.open_target(initial_target))
+        else:
+            QTimer.singleShot(0, self.show_home)
 
-        container = QWidget()
-        layout = QVBoxLayout(container)
-        header = QHBoxLayout()
-        brand = QLabel("CATIA  /  文档阅读器")
-        brand.setStyleSheet("font-size:20px;font-weight:600;color:#163c60;padding:8px")
-        header.addWidget(brand)
-        header.addStretch()
-        self.module = QComboBox()
-        self.module.setMinimumWidth(200)
-        self.module.addItem("全部手册", None)
-        header.addWidget(self.module)
-        self.query = QLineEdit()
-        self.query.setPlaceholderText("中英文搜索，例如 创建凸台、装配约束、曲面偏置…")
-        self.query.setMinimumWidth(300)
-        self.query.returnPressed.connect(self.search)
-        header.addWidget(self.query, 1)
-        search = QPushButton("搜索")
-        search.clicked.connect(self.search)
-        header.addWidget(search)
-        self.build_button = QPushButton("建立 / 更新索引")
-        self.build_button.clicked.connect(self.build_index)
-        header.addWidget(self.build_button)
-        layout.addLayout(header)
-        split = QSplitter()
-        self.tabs = QTabWidget()
-        self.tree = QTreeWidget()
-        self.tree.setHeaderHidden(True)
-        self.tree.itemExpanded.connect(self.expand_module)
-        self.tree.itemActivated.connect(self.activate_tree)
-        self.tree.itemClicked.connect(self.activate_tree)
-        self.results = QListWidget()
-        self.results.setWordWrap(True)
-        self.results.itemClicked.connect(self.activate_result)
-        self.tabs.addTab(self.tree, "手册目录")
-        self.tabs.addTab(self.results, "搜索结果")
-        split.addWidget(self.tabs)
-
-        center = QWidget()
-        center_layout = QVBoxLayout(center)
-        navigation = QHBoxLayout()
-        self.back_action = QAction("← 后退", self)
-        self.back_action.setShortcut(QKeySequence("Alt+Left"))
-        self.back_action.triggered.connect(self.go_back)
-        self.forward_action = QAction("前进 →", self)
-        self.forward_action.setShortcut(QKeySequence("Alt+Right"))
-        self.forward_action.triggered.connect(self.go_forward)
-        self.addActions([self.back_action, self.forward_action])
-        self.back_menu, self.forward_menu = QMenu(self), QMenu(self)
-        for action, menu in (
-            (self.back_action, self.back_menu),
-            (self.forward_action, self.forward_menu),
-        ):
-            button = QToolButton()
-            button.setDefaultAction(action)
-            button.setMenu(menu)
-            button.setPopupMode(QToolButton.ToolButtonPopupMode.MenuButtonPopup)
-            navigation.addWidget(button)
-        self.page_title = QLabel("欢迎")
-        self.page_title.setWordWrap(True)
-        navigation.addWidget(self.page_title, 1)
-        self.auto_translate = QCheckBox("划词即译")
-        self.auto_translate.setChecked(settings.translation.get("automatic", True))
-        self.auto_translate.toggled.connect(self.toggle_translation)
-        navigation.addWidget(self.auto_translate)
-        configure = QPushButton("翻译设置")
-        configure.clicked.connect(self.configure_translation)
-        navigation.addWidget(configure)
-        center_layout.addLayout(navigation)
+    def create_reader(self):
         self.profile = QWebEngineProfile(self)
-        self.interceptor = LocalRequests([settings.root, self.render_cache], self.profile)
+        self.interceptor = LocalRequests([self.settings.root, self.render_cache], self.profile)
         self.profile.setUrlRequestInterceptor(self.interceptor)
-        self.web = QWebEngineView()
-        self.reader_page = ReaderPage(self.profile, self.web)
-        self.web.setPage(self.reader_page)
+        web = QWebEngineView()
+        self.reader_page = ReaderPage(self.profile, web)
+        web.setPage(self.reader_page)
         self.reader_page.settings().setAttribute(
             QWebEngineSettings.WebAttribute.JavascriptEnabled, False
         )
@@ -213,43 +143,11 @@ class MainWindow(QMainWindow):
         self.reader_page.navigate.connect(self.navigate)
         self.reader_page.selectionChanged.connect(self.selection_changed)
         self.reader_page.scrollPositionChanged.connect(self.scroll_changed)
-        self.web.loadFinished.connect(self.page_loaded)
-        self.web.installEventFilter(self)
-        self.web.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.web.customContextMenuRequested.connect(self.context_menu)
-        center_layout.addWidget(self.web, 1)
-        split.addWidget(center)
-
-        side = QWidget()
-        side_layout = QVBoxLayout(side)
-        side_layout.addWidget(QLabel("本页示例 · 点击在 CATIA 打开"))
-        self.samples = QListWidget()
-        self.samples.itemClicked.connect(self.open_sample)
-        side_layout.addWidget(self.samples, 1)
-        side_layout.addWidget(QLabel("即时翻译 · 选中词或句子"))
-        self.translation = QTextBrowser()
-        self.translation.setPlainText(
-            "双击单词，或拖动选择句子，选区稳定后自动显示译文。\n\n"
-            "可在“翻译设置”切换本机离线模型或翻译服务。"
-        )
-        side_layout.addWidget(self.translation, 2)
-        split.addWidget(side)
-        split.setSizes([290, 900, 290])
-        layout.addWidget(split, 1)
-        self.setCentralWidget(container)
-        self.statusBar().showMessage("准备就绪 · 首次使用请建立索引；目录与正文可直接浏览")
-        self.setStyleSheet(
-            "QMainWindow{background:#f4f7fb} QPushButton{padding:6px 10px} "
-            "QLineEdit,QComboBox{padding:6px} QTreeWidget,QListWidget,"
-            "QTextBrowser{border:1px solid #dce3ec;border-radius:4px}"
-        )
-        self.load_modules()
-        self.update_history_actions()
-        initial = "online/prtug_C2/prtugbt0501.htm"
-        if initial_target:
-            QTimer.singleShot(0, lambda: self.open_target(initial_target))
-        elif self.parser.source(initial).is_file():
-            QTimer.singleShot(0, lambda: self.open_document(initial))
+        web.loadFinished.connect(self.page_loaded)
+        web.installEventFilter(self)
+        web.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        web.customContextMenuRequested.connect(self.context_menu)
+        return web
 
     def submit(self, function, callback, progress=None, finished=None, error=None):
         job = Job(function)
@@ -267,22 +165,6 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(message)
         QMessageBox.warning(self, "操作未完成", message)
 
-    def load_modules(self):
-        online = self.settings.root / "online"
-        if not online.is_dir():
-            self.statusBar().showMessage(f"找不到文档目录: {online}")
-            return
-        for path in sorted(online.iterdir()):
-            if not path.is_dir() or not any(path.glob("*.htm")):
-                continue
-            self.module.addItem(path.name, path.name)
-            item = QTreeWidgetItem([path.name])
-            item.setData(0, Qt.ItemDataRole.UserRole, {"module": path.name})
-            item.addChild(QTreeWidgetItem(["展开以加载目录…"]))
-            self.tree.addTopLevelItem(item)
-            if path.name == "prtug_C2":
-                item.setExpanded(True)
-
     def expand_module(self, item):
         data = item.data(0, Qt.ItemDataRole.UserRole)
         if not data or "module" not in data or data.get("loaded"):
@@ -290,39 +172,38 @@ class MainWindow(QMainWindow):
         data["loaded"] = True
         item.setData(0, Qt.ItemDataRole.UserRole, data)
         item.takeChildren()
-        folder = self.settings.root / "online" / data["module"]
-        maps = sorted(p for p in folder.glob("*sm.htm") if not p.name.endswith("ssm.htm"))
-        entries = []
-        if maps:
-            relative = maps[0].relative_to(self.settings.root).as_posix()
-            entries = self.parser.toc(relative)
-            item.setText(0, f"{self.parser.parse(relative).title} · {folder.name}")
+        manual = self.catalog.manuals[data["module"]]
+        entries = self.parser.toc(manual.toc) if manual.toc else []
         stack = [(-1, item)]
         for entry in entries:
             while len(stack) > 1 and stack[-1][0] >= entry.depth:
                 stack.pop()
             child = QTreeWidgetItem([entry.title])
             child.setData(
-                0, Qt.ItemDataRole.UserRole, {"path": entry.path, "fragment": entry.fragment}
+                0,
+                Qt.ItemDataRole.UserRole,
+                {"path": entry.path, "fragment": entry.fragment, "manual": manual.id},
             )
             stack[-1][1].addChild(child)
             stack.append((entry.depth, child))
-        if not entries:
-            for path in sorted(folder.glob("*.htm")):
-                child = QTreeWidgetItem([path.stem])
-                child.setData(
-                    0,
-                    Qt.ItemDataRole.UserRole,
-                    {"path": path.relative_to(self.settings.root).as_posix()},
-                )
-                item.addChild(child)
 
     def activate_tree(self, item, column=0):
         data = item.data(0, Qt.ItemDataRole.UserRole)
-        if data and "path" in data:
+        if not data:
+            return
+        if "path" in data:
+            self.set_scope("manual", data["manual"])
             self.open_document(data["path"], data.get("fragment", ""))
+        elif "module" in data:
+            self.open_manual(data["module"])
+        elif "category" in data:
+            item.setExpanded(True)
+            self.show_home(data["category"])
 
     def activate_result(self, item):
+        if item.data(Qt.ItemDataRole.UserRole) == "@index":
+            self.build_index()
+            return
         self.open_document(item.data(Qt.ItemDataRole.UserRole))
 
     def open_document(
@@ -332,9 +213,8 @@ class MainWindow(QMainWindow):
         remember: bool = True,
         history_index: int | None = None,
     ):
-        if self.current_document and not self.page_loading:
-            position = self.reader_page.scrollPosition()
-            self.history.save_scroll(position.x(), position.y())
+        self.save_location_scroll()
+        parser, render_cache = self.parser, self.render_cache
         self.navigation_generation += 1
         generation = self.navigation_generation
         self.page_loading = True
@@ -344,13 +224,13 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage("正在加载文档…")
 
         def prepare(_):
-            source = self.parser.source(relative)
+            source = parser.source(relative)
             stat = source.stat()
             key = (str(source), stat.st_mtime_ns, stat.st_size)
             cached_result = self.document_cache.get(key)
             if cached_result is not None:
                 return cached_result
-            document = self.parser.parse(relative)
+            document = parser.parse(relative)
             visited = {document.path}
             while document.kind == "frameset":
                 candidates = [
@@ -372,13 +252,13 @@ class MainWindow(QMainWindow):
                     ),
                     candidates[-1],
                 )
-                document = self.parser.parse(chosen.target)
+                document = parser.parse(chosen.target)
                 visited.add(document.path)
-            cached = self.render_cache / (
+            cached = render_cache / (
                 hashlib.sha256(document.path.encode()).hexdigest()[:24] + ".html"
             )
             temporary = cached.with_suffix(f".{generation}.tmp")
-            temporary.write_text(self.parser.render(document.path), encoding="utf-8")
+            temporary.write_text(parser.render(document.path), encoding="utf-8")
             temporary.replace(cached)
             return key, document, cached
 
@@ -392,10 +272,13 @@ class MainWindow(QMainWindow):
                 self.document_cache.popitem(last=False)
             same_page = (
                 self.current_document
+                and self.center_stack.currentWidget() == self.web
                 and self.current_document.path == document.path
                 and self.current_document.content_hash == document.content_hash
             )
             self.current_document = document
+            self.center_stack.setCurrentWidget(self.web)
+            self.details_pane.setVisible(self.settings.appearance.get("show_tools", True))
             self.requested_history_position = None
             self.expected_render = cached.resolve()
             if history_index is not None:
@@ -419,6 +302,7 @@ class MainWindow(QMainWindow):
                 item.setData(Qt.ItemDataRole.UserRole, link.target)
                 item.setToolTip(link.target)
                 self.samples.addItem(item)
+            self.sample_group.setVisible(self.samples.count() > 0)
             self.update_history_actions()
             if same_page:
                 if self.pending_restore is not None:
@@ -427,13 +311,13 @@ class MainWindow(QMainWindow):
                     self.scroll_to_anchor(fragment)
                 self.pending_restore = None
                 self.page_loading = False
-                self.statusBar().showMessage(document.path + ("#" + fragment if fragment else ""))
+                self.statusBar().clearMessage()
                 return
             base = QUrl.fromLocalFile(str(cached))
             if fragment:
                 base.setFragment(fragment)
             self.web.load(base)
-            self.statusBar().showMessage(document.path)
+            self.statusBar().clearMessage()
 
         def failed(message):
             if generation == self.navigation_generation:
@@ -482,7 +366,7 @@ class MainWindow(QMainWindow):
         self.page_loading = False
 
     def scroll_changed(self, position):
-        if not self.page_loading:
+        if not self.page_loading and self.center_stack.currentWidget() == self.web:
             self.history.save_scroll(position.x(), position.y())
 
     def navigate(self, url):
@@ -534,6 +418,12 @@ class MainWindow(QMainWindow):
 
     def go_to_history(self, position):
         location = self.history.entries[position]
+        if location.path == "@home" or location.path.startswith("@category:"):
+            category = (
+                location.path.split(":", 1)[1] if location.path.startswith("@category:") else None
+            )
+            self.show_home(category, remember=False, history_index=position)
+            return
         self.open_document(location.path, location.fragment, history_index=position)
 
     def update_history_actions(self):
@@ -564,41 +454,66 @@ class MainWindow(QMainWindow):
                 )
 
     def eventFilter(self, watched, event):
-        if event.type() == QEvent.Type.MouseButtonPress:
-            if event.button() == Qt.MouseButton.BackButton:
-                self.go_back()
-                return True
-            if event.button() == Qt.MouseButton.ForwardButton:
-                self.go_forward()
-                return True
+        if event.type() in {
+            QEvent.Type.MouseButtonPress,
+            QEvent.Type.MouseButtonRelease,
+            QEvent.Type.MouseButtonDblClick,
+        } and event.button() in {Qt.MouseButton.BackButton, Qt.MouseButton.ForwardButton}:
+            if event.type() in {QEvent.Type.MouseButtonPress, QEvent.Type.MouseButtonDblClick}:
+                if event.button() == Qt.MouseButton.BackButton:
+                    self.go_back()
+                else:
+                    self.go_forward()
+            event.accept()
+            return True
+        if event.type() == QEvent.Type.ChildAdded:
+            child = event.child()
+            if isinstance(child, QWidget):
+                child.installEventFilter(self)
         return super().eventFilter(watched, event)
 
     def search(self):
         query = self.query.text().strip()
         if not query:
             return
-        module = self.module.currentData()
+        modules = self.scope_modules()
+        settings = self.settings
+        scope_label = self.module.currentText().strip()
         self.search_generation += 1
         generation = self.search_generation
         self.statusBar().showMessage("搜索中…")
 
         def work(_):
-            with ManualIndex(self.settings.database, self.settings.root) as index:
-                return SearchService(index, self.settings.translation).search(query, module, 80)
+            with ManualIndex(settings.database, settings.root) as index:
+                response = SearchService(index, settings.translation).search(
+                    query, limit=80, modules=modules
+                )
+                return response, index.connection.execute(
+                    "SELECT count(*) FROM documents"
+                ).fetchone()[0]
 
-        def done(response):
+        def done(result):
             if generation != self.search_generation:
                 return
+            response, indexed = result
             self.results.clear()
             for hit in response.hits:
-                item = QListWidgetItem(f"{hit.title}\n{hit.module}\n{hit.snippet}")
+                manual = self.catalog.manuals.get(hit.module)
+                label = manual.label if manual else "参考文档"
+                preview = " ".join(hit.snippet.split())[:170]
+                item = QListWidgetItem(f"{hit.title}\n{label}\n{preview}")
                 item.setData(Qt.ItemDataRole.UserRole, hit.path)
                 item.setToolTip(hit.path)
                 self.results.addItem(item)
             self.tabs.setCurrentWidget(self.results)
-            summary = f"找到 {len(response.hits)} 个结果（最多 80 个）"
-            if response.plan.expanded != query:
-                summary += " · 查询展开：" + response.plan.expanded
+            if indexed == 0:
+                item = QListWidgetItem("建立搜索索引")
+                item.setData(Qt.ItemDataRole.UserRole, "@index")
+                self.results.addItem(item)
+                self.statusBar().showMessage("此文档尚未建立索引")
+                return
+            summary = f"{scope_label} · {len(response.hits)} 个结果"
+            self.query.setToolTip(response.plan.expanded)
             if response.plan.unknown:
                 summary += " · " + "；".join(response.plan.notes)
             self.statusBar().showMessage(summary)
@@ -606,21 +521,27 @@ class MainWindow(QMainWindow):
         self.submit(work, done)
 
     def build_index(self):
+        if not self.build_button.isEnabled():
+            return
         self.build_button.setEnabled(False)
-        module = self.module.currentData()
+        settings = self.settings
         self.statusBar().showMessage("正在扫描文档并建立索引…")
 
         def work(progress):
-            with ManualIndex(self.settings.database, self.settings.root) as index:
-                return index.build(module=module, progress=progress)
+            with ManualIndex(settings.database, settings.root) as index:
+                return index.build(progress=progress)
 
         def done(report):
+            if settings.root != self.settings.root or settings.database != self.settings.database:
+                return
             self.statusBar().showMessage(
                 f"索引完成：更新 {report['updated']}，未变化 {report['unchanged']}，"
                 f"错误 {len(report['errors'])}"
             )
             if report["errors"]:
                 self.show_error(json.dumps(report["errors"][:5], ensure_ascii=False, indent=2))
+            elif self.query.text().strip():
+                self.search()
 
         self.submit(
             work,
@@ -636,8 +557,9 @@ class MainWindow(QMainWindow):
 
     def launch_sample(self, relative):
         self.statusBar().showMessage("正在交给 CATIA 打开示例…")
+        settings = self.settings
         self.submit(
-            lambda _: CatiaLauncher(self.settings).open(relative),
+            lambda _: CatiaLauncher(settings).open(relative),
             lambda result: self.statusBar().showMessage(
                 f"已提交给 CATIA（{result['method']}）：{result['path']}"
             ),
@@ -653,7 +575,7 @@ class MainWindow(QMainWindow):
 
     def translate_selection(self):
         text = self.web.selectedText().strip()
-        if not text or self.page_loading:
+        if not text or self.page_loading or self.center_stack.currentWidget() != self.web:
             return
         maximum = int(self.settings.translation.get("max_selection_chars", 3000))
         if len(text) > maximum:
@@ -682,6 +604,7 @@ class MainWindow(QMainWindow):
         if (
             self.auto_translate.isChecked()
             and not self.page_loading
+            and self.center_stack.currentWidget() == self.web
             and self.web.selectedText().strip()
         ):
             self.selection_timer.start(
@@ -696,9 +619,10 @@ class MainWindow(QMainWindow):
         self.translation_running = True
         self.translation_processing = True
         self.translation.setPlainText(text + "\n\n翻译中…")
+        settings = self.settings
 
         def work(_):
-            with ManualIndex(self.settings.database, self.settings.root) as index:
+            with ManualIndex(settings.database, settings.root) as index:
                 service = TranslationService(index, make_provider(config))
                 return service.translate(text, config.get("target_language", "zh-CN"))
 
@@ -753,28 +677,71 @@ class MainWindow(QMainWindow):
             self.selection_changed()
 
     def configure_translation(self):
-        dialog = TranslationSettings(self.settings.translation, self)
-        if dialog.exec() != TranslationSettings.DialogCode.Accepted:
+        self.configure_settings(tab=1)
+
+    def configure_settings(self, checked=False, tab=0):
+        dialog = GlobalSettings(self.settings, self)
+        dialog.tabs.setCurrentIndex(tab)
+        if dialog.exec() != GlobalSettings.DialogCode.Accepted:
             return
-        values = dialog.values()
         try:
-            make_provider({**self.settings.translation, **values})
-            dialog.apply_session_key()
-            self.settings = save_translation(self.settings, values)
-            self.auto_translate.blockSignals(True)
-            self.auto_translate.setChecked(values["automatic"])
-            self.auto_translate.blockSignals(False)
-            self.invalidate_translation()
-            self.translation.setPlainText("翻译设置已保存。重新选择英文即可自动翻译。")
-            self.selection_changed()
+            changes = dialog.changes()
+            make_provider({**self.settings.translation, **changes["translation"]})
+            updated = save_settings(self.settings, changes)
+            dialog.translation.apply_session_key()
+            self.apply_settings(updated)
         except Exception as exc:
             self.show_error(str(exc))
+
+    def apply_settings(self, settings):
+        library_changed = (
+            settings.root != self.settings.root or settings.database != self.settings.database
+        )
+        self.invalidate_translation()
+        self.search_generation += 1
+        self.settings = settings
+        QApplication.instance().setFont(
+            QFont("Microsoft YaHei UI", int(settings.appearance.get("font_size", 10)))
+        )
+        self.web.setZoomFactor(settings.appearance.get("reader_zoom", 100) / 100)
+        self.auto_translate.blockSignals(True)
+        self.auto_translate.setChecked(settings.translation.get("automatic", True))
+        self.auto_translate.blockSignals(False)
+        self.tools_action.setChecked(settings.appearance.get("show_tools", True))
+        if library_changed:
+            self.navigation_generation += 1
+            self.parser = ManualParser(settings.root)
+            self.render_cache = settings.database.parent / "rendered"
+            self.render_cache.mkdir(parents=True, exist_ok=True)
+            self.interceptor.roots = [settings.root.resolve(), self.render_cache.resolve()]
+            self.document_cache.clear()
+            self.current_document = None
+            self.history = NavigationHistory()
+            self.reload_catalog()
+            self.results.clear()
+            self.translation.clear()
+            self.show_home()
+        else:
+            self.details_pane.setVisible(
+                settings.appearance.get("show_tools", True)
+                and self.center_stack.currentWidget() == self.web
+            )
+            self.selection_changed()
+        self.statusBar().showMessage("设置已保存", 2000)
 
     def closeEvent(self, event):
         if self.jobs:
             self.statusBar().showMessage("后台任务仍在运行，完成后可关闭窗口")
             event.ignore()
             return
+        if self.settings.appearance.get("remember_window", True):
+            try:
+                self.settings = save_settings(
+                    self.settings,
+                    {"appearance": {"window_width": self.width(), "window_height": self.height()}},
+                )
+            except OSError:
+                pass
         # Release the page before its profile to avoid WebEngine shutdown warnings.
         self.web.setPage(QWebEnginePage(self.web))
         self.reader_page.deleteLater()
@@ -782,9 +749,14 @@ class MainWindow(QMainWindow):
 
 
 def run(settings: Settings, initial_target: str | None = None) -> int:
+    if sys.platform == "win32":
+        import ctypes
+
+        ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID("CatiaManualViewer.Desktop")
     app = QApplication.instance() or QApplication(sys.argv[:1])
-    app.setApplicationName("CatiaManualViewer")
-    app.setFont(QFont("Microsoft YaHei UI", 10))
+    app.setApplicationName(APP_NAME)
+    app.setWindowIcon(app_icon())
+    app.setFont(QFont("Microsoft YaHei UI", int(settings.appearance.get("font_size", 10))))
     window = MainWindow(settings, initial_target)
     window.show()
     return app.exec()

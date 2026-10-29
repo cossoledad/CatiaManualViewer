@@ -2,6 +2,7 @@
 
 import json
 import os
+from dataclasses import replace
 from pathlib import Path
 
 os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
@@ -20,7 +21,10 @@ for filename in ("segoeui.ttf", "msyh.ttc"):
     font = Path(os.environ.get("WINDIR", r"C:\Windows")) / "Fonts" / filename
     if font.is_file():
         QFontDatabase.addApplicationFont(str(font))
-window = MainWindow(load_settings())
+window = MainWindow(
+    replace(load_settings(), config_path=Path(".cache/smoke-config.toml").resolve()),
+    "online/prtug_C2/prtugbt0501.htm",
+)
 window.resize(1480, 940)
 window.show()
 failures = []

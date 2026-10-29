@@ -2,19 +2,22 @@
 
 CATIA V5 本地帮助文档查看器的 Python 基础原型。核心解析、SQLite 搜索与翻译接口独立于 GUI，也可供 agent 通过 JSON CLI 使用。
 
-完整调查与架构见 [分析与基本设计](docs/analysis-and-design.md)，当前 v0.2 行为、API 配置和验证见 [第二阶段说明](docs/stage2.md)。
+完整调查与架构见 [分析与基本设计](docs/analysis-and-design.md)。当前 v0.3 的功能分类、全局设置、迁移与界面说明见 [第三阶段说明](docs/stage3.md)；即时翻译与中文查询的设计见 [第二阶段说明](docs/stage2.md)。
 
 ## 当前能力
 
 - 读取本机旧 HTML，提取标题、正文块、锚点、资源和示例链接。
+- 以原版首页的功能分类组织导航：7 个分类、130 本手册，常用手册显示中文名称。
+- 可搜索全部文档、某个功能分类或某本手册，目录选择与搜索范围联动。
 - 从静态 Site Map 恢复层级目录，识别框架页和旧导航静态调用。
 - SQLite FTS5 英文检索，中文术语扩展与查询翻译，支持模块筛选、标题优先和增量索引。
 - PySide6 桌面阅读、图片/表格、目录、搜索与示例列表。
 - CATIA COM 会话复用及 CATSTART 回退；CLI 默认只显示启动参数。
 - 单词／句子选中即译，350 ms 防抖、请求合并、过期结果过滤与翻译缓存。
-- 翻译设置支持大模型兼容 API、LibreTranslate、本机英中双向模型；可测试服务。
+- 全局设置可更换文档、索引、模型和 CATIA 路径，调整字号、阅读缩放和侧栏。
+- 翻译源支持本机模型、MyMemory、DeepL、LibreTranslate、术语表和大模型兼容 API；分别保存配置并提供服务测试。
 - 恢复 `.doc/src` 链接及 API 文档中静态脚本生成的链接；保留页面锚点与模型链接。
-- 前进／后退、Alt+←／Alt+→、鼠标侧键与历史下拉菜单，恢复页面滚动位置。
+- 前进／后退、Alt+←／Alt+→、鼠标侧键与历史下拉菜单，恢复滚动位置；完整拦截侧键弹起，避免二次跳转。
 
 当前本机备用模型已安装。你的真实 API 地址与模型信息尚未配置，可稍后在“翻译设置”中填写并测试。中文搜索查询英文原文，尚未建立整库译文索引。CATIA 的真实模型打开仍需交互联调。
 
@@ -34,7 +37,11 @@ cd C:\Code\CatiaManualViewer
 .\scripts\start.ps1
 ```
 
+也可双击项目根目录的 `Catia Manual Viewer.lnk`。新电脑完成 bootstrap 后会自动生成带应用图标的快捷方式；单独重建可运行 `scripts/create_shortcut.ps1`。
+
 本机默认路径已在 `config.example.toml` 配好。个人设置放入忽略提交的 `config.local.toml`，或用 `--config <路径>` 指定；相对数据库路径以配置文件目录为基准。
+
+迁移到其他电脑时重建 `.venv`，然后在右上角“设置”指定包含 `online` 的文档目录。仅阅读文档不需要安装 CATIA；不同文档目录的索引自动隔离。详见 [迁移步骤](docs/stage3.md#迁移到另一台电脑)。
 
 ## 新环境安装
 
@@ -69,6 +76,8 @@ cd C:\Code\CatiaManualViewer
 .\.venv\Scripts\python.exe -m catia_manual search 'creating pads' --module prtug_C2
 .\.venv\Scripts\python.exe -m catia_manual search '装配约束' --explain
 .\.venv\Scripts\python.exe -m catia_manual search '曲面偏置'
+.\.venv\Scripts\python.exe -m catia_manual search '圆角' --category mechanical-design
+.\.venv\Scripts\python.exe -m catia_manual catalog
 .\.venv\Scripts\python.exe -m catia_manual read online/prtug_C2/prtugbt0501.htm
 .\.venv\Scripts\python.exe -m catia_manual toc online/prtug_C2/prtugsm.htm
 .\.venv\Scripts\python.exe -m catia_manual examples online/prtug_C2/prtugbt0501.htm
@@ -96,7 +105,7 @@ with ManualIndex(settings.database, settings.root) as index:
 
 ## 配置整句翻译
 
-在阅读器右上角点击“翻译设置”，选择服务、填写地址和模型名，输入本次运行使用的 API Key，然后“测试当前服务”并保存。默认勾选“划词即译”，无需点击翻译按钮。
+在阅读器右上角打开“设置 → 翻译”，选择服务。非大模型源已给出默认地址；需要密钥的源填写本次运行使用的 API Key，大模型另外填写地址与模型名。可先测试再保存。默认启用选中即译，无需点击翻译按钮。
 
 大模型兼容 API 配置示例（模型名与地址由你的服务提供）：
 
@@ -140,9 +149,12 @@ api_key_env = 'CATIA_TRANSLATION_API_KEY'
 .\.venv\Scripts\ruff.exe check src tests scripts
 .\.venv\Scripts\python.exe scripts/smoke_gui.py
 .\.venv\Scripts\python.exe scripts/verify_stage2_gui.py
+.\.venv\Scripts\python.exe scripts/verify_stage3_gui.py
 ```
 
 GUI smoke test 需要已有索引，使用 offscreen Qt 渲染并写入 `data/gui-smoke.png`。第二阶段 GUI 验证在 Windows 桌面短暂显示阅读器，检查自动选词、句子翻译、旧请求过滤、真实链接和前后导航，写入 `data/stage2-gui.png`；它使用本机模型并捕获示例打开请求，不访问远程 API 或启动 CATIA。第一阶段记录见 [本机验证](docs/verification.md)。
+
+第三阶段验证功能首页、分类搜索、侧键完整点击和文档迁移；测试使用独立配置，结果写入 `data/stage3-gui-verification.json`，不调用远程翻译服务。
 
 ```text
 src/catia_manual/

@@ -6,6 +6,7 @@ from typing import Protocol
 
 from catia_manual.core.credentials import get_api_key
 from catia_manual.core.index import ManualIndex
+from catia_manual.core.providers import provider_profile
 
 GLOSSARY = {
     "pad": "凸台（拉伸）",
@@ -58,10 +59,13 @@ class GlossaryProvider:
 
 
 class LibreTranslateProvider:
-    def __init__(self, endpoint: str, api_key_env: str = "CATIA_TRANSLATION_API_KEY"):
+    def __init__(
+        self, endpoint: str, api_key_env: str = "CATIA_TRANSLATION_API_KEY", api_key_override=None
+    ):
         if not endpoint.startswith(("https://", "http://")):
             raise ValueError("翻译服务地址必须为 HTTP(S)")
         self.endpoint, self.api_key_env = endpoint, api_key_env
+        self.api_key_override = api_key_override
         self.name = "libretranslate:" + endpoint
 
     def translate(self, text: str, target: str) -> str:
@@ -73,7 +77,7 @@ class LibreTranslateProvider:
             "target": "zh" if target == "zh-CN" else target,
             "format": "text",
         }
-        key = get_api_key(self.api_key_env)
+        key = self.api_key_override or get_api_key(self.api_key_env)
         if key:
             payload["api_key"] = key
         with httpx.Client(timeout=60) as client:
@@ -88,7 +92,7 @@ class LibreTranslateProvider:
 class ChatCompletionsProvider:
     """Explicitly configured OpenAI-compatible Chat Completions translation endpoint."""
 
-    def __init__(self, endpoint: str, model: str, api_key_env: str):
+    def __init__(self, endpoint: str, model: str, api_key_env: str, api_key_override=None):
         if not endpoint.startswith(("https://", "http://")):
             raise ValueError("请填写完整的 HTTP(S) API 地址")
         if not model.strip():
@@ -97,6 +101,7 @@ class ChatCompletionsProvider:
         if not self.endpoint.endswith("/chat/completions"):
             self.endpoint += "/chat/completions"
         self.model, self.api_key_env = model.strip(), api_key_env
+        self.api_key_override = api_key_override
         self.name = f"chat-completions-v1:{self.endpoint}:{self.model}"
 
     def translate(self, text: str, target: str) -> str:
@@ -111,7 +116,7 @@ class ChatCompletionsProvider:
             "fillet=圆角, shaft=旋转体, draft=拔模."
         )
         headers = {}
-        key = get_api_key(self.api_key_env)
+        key = self.api_key_override or get_api_key(self.api_key_env)
         if key:
             headers["Authorization"] = "Bearer " + key
         with httpx.Client(timeout=30) as client:
@@ -138,6 +143,77 @@ class ChatCompletionsProvider:
         if not isinstance(result, str) or not result.strip():
             raise ValueError("翻译 API 返回空文本或拒绝响应")
         return result.strip()
+
+
+class MyMemoryProvider:
+    def __init__(self, endpoint: str, api_key_env: str, api_key_override=None):
+        self.endpoint, self.api_key_env = endpoint, api_key_env
+        self.api_key_override = api_key_override
+        self.name = "mymemory-v1:" + endpoint
+
+    def translate(self, text: str, target: str) -> str:
+        import html
+
+        import httpx
+
+        target = "zh-CN" if target.lower().startswith("zh") else "en"
+        source = "en" if target == "zh-CN" else "zh-CN"
+        chunks, current, length = [], "", 0
+        for char in text:
+            size = len(char.encode("utf-8"))
+            if length + size > 480:
+                chunks.append(current)
+                current, length = "", 0
+            current += char
+            length += size
+        if current:
+            chunks.append(current)
+        translated = []
+        with httpx.Client(timeout=30) as client:
+            for chunk in chunks:
+                params = {"q": chunk, "langpair": source + "|" + target}
+                key = self.api_key_override or get_api_key(self.api_key_env)
+                if key:
+                    params["key"] = key
+                response = client.get(self.endpoint, params=params)
+                if response.is_error:
+                    raise ValueError(f"MyMemory 请求失败（HTTP {response.status_code}）")
+                data = response.json()
+                if str(data.get("responseStatus", 200)) != "200":
+                    raise ValueError("MyMemory 暂不可用或已达到额度限制")
+                value = data.get("responseData", {}).get("translatedText")
+                if not isinstance(value, str) or not value.strip():
+                    raise ValueError("MyMemory 返回空结果")
+                translated.append(html.unescape(value))
+        return ("" if target == "zh-CN" else " ").join(translated)
+
+
+class DeepLProvider:
+    def __init__(self, endpoint: str, api_key_env: str, api_key_override=None):
+        self.endpoint, self.api_key_env = endpoint, api_key_env
+        self.api_key_override = api_key_override
+        self.name = "deepl-v1:" + endpoint
+
+    def translate(self, text: str, target: str) -> str:
+        import httpx
+
+        key = self.api_key_override or get_api_key(self.api_key_env)
+        if not key:
+            raise ValueError("请在设置中填写 DeepL API Key")
+        with httpx.Client(timeout=30) as client:
+            response = client.post(
+                self.endpoint,
+                headers={"Authorization": "DeepL-Auth-Key " + key},
+                json={
+                    "text": [text],
+                    "target_lang": "ZH" if target.lower().startswith("zh") else "EN",
+                },
+            )
+            response.raise_for_status()
+            result = response.json()["translations"][0]["text"]
+        if not isinstance(result, str) or not result.strip():
+            raise ValueError("DeepL 返回空结果")
+        return result
 
 
 @dataclass(frozen=True)
@@ -176,6 +252,13 @@ class TranslationService:
 
 def make_provider(config: dict) -> TranslationProvider:
     name = config.get("provider", "glossary")
+    config = {**config, **provider_profile(config, name)}
+    if name in {"mymemory", "deepl", "libretranslate", "chat-completions"}:
+        from urllib.parse import urlsplit
+
+        url = urlsplit(config.get("endpoint", ""))
+        if url.scheme not in {"http", "https"} or not url.netloc:
+            raise ValueError("请填写完整的 HTTP(S) 翻译服务地址")
     if name == "glossary":
         return GlossaryProvider()
     if name == "local":
@@ -184,12 +267,23 @@ def make_provider(config: dict) -> TranslationProvider:
         return LocalTranslationProvider(Path(config.get("model_dir", "data/models")))
     if name == "libretranslate":
         return LibreTranslateProvider(
-            config["endpoint"], config.get("api_key_env", "CATIA_TRANSLATION_API_KEY")
+            config["endpoint"],
+            config.get("api_key_env", "CATIA_TRANSLATION_API_KEY"),
+            config.get("api_key_override"),
         )
     if name == "chat-completions":
         return ChatCompletionsProvider(
             config.get("endpoint", ""),
             config.get("model", ""),
             config.get("api_key_env", "CATIA_TRANSLATION_API_KEY"),
+            config.get("api_key_override"),
+        )
+    if name == "mymemory":
+        return MyMemoryProvider(
+            config["endpoint"], config["api_key_env"], config.get("api_key_override")
+        )
+    if name == "deepl":
+        return DeepLProvider(
+            config["endpoint"], config["api_key_env"], config.get("api_key_override")
         )
     raise ValueError(f"未知翻译提供方: {name}")

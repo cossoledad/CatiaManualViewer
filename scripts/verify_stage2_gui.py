@@ -4,6 +4,7 @@ import json
 import os
 import time
 from dataclasses import replace
+from pathlib import Path
 
 os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu")
 
@@ -18,6 +19,7 @@ app = QApplication([])
 settings = load_settings()
 settings = replace(
     settings,
+    config_path=Path(".cache/stage2-qa.toml").resolve(),
     translation={
         **settings.translation,
         "provider": "local",
@@ -25,7 +27,7 @@ settings = replace(
         "selection_delay_ms": 200,
     },
 )
-window = MainWindow(settings)
+window = MainWindow(settings, "online/prtug_C2/prtugbt0501.htm")
 window.show()
 report = {"checks": [], "failures": []}
 sample_requests = []
@@ -224,7 +226,7 @@ def chinese_search():
     window.query.setText("装配约束")
     window.search()
     wait_for(
-        lambda: window.results.count() > 0 and "查询展开" in window.statusBar().currentMessage(),
+        lambda: window.results.count() > 0 and "个结果" in window.statusBar().currentMessage(),
         capture,
     )
 

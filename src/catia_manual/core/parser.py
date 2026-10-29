@@ -155,12 +155,17 @@ class ManualParser:
                     del tag[attr]
             # Inline style is unnecessary for functionality; prevents external CSS requests.
             tag.attrs.pop("style", None)
+            if tag.name in {"table", "tr", "td", "th"}:
+                tag.attrs.pop("height", None)
         content = soup.body.decode_contents() if soup.body else str(soup)
         title = html.escape(source.stem)
         return f"""<!doctype html><html><head><meta charset="utf-8"><title>{title}</title>
 <style>body{{font:16px/1.65 "Segoe UI","Microsoft YaHei",sans-serif;color:#213047;
 background:#fff;margin:32px auto;padding:0 32px;max-width:1120px}}
-h1,h2,h3{{color:#143e65;line-height:1.35}}a{{color:#006ca8}}img{{max-width:100%;height:auto}}
+h1,h2,h3{{color:#173f56;line-height:1.35}}h1{{font-size:30px;letter-spacing:-.4px}}
+a{{color:#167c85}}img{{max-width:100%;height:auto}}
+img[src*="/common/atarget"],img[src*="/common/aprereq"],img[src*="/common/ascenari"]{{min-width:28px}}
+font{{font-family:inherit;color:inherit}}
 table{{max-width:100%}}td{{vertical-align:top}}kbd,code{{background:#eef3f8;padding:2px 4px}}
 </style></head><body>{content}</body></html>"""
 
