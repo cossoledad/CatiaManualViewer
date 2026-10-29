@@ -4,6 +4,8 @@ CATIA V5 本地文档桌面查看器：功能分类、范围搜索、划词与�
 
 ## 使用便携版
 
+发行入口：[GitHub Releases](https://github.com/cossoledad/CatiaManualViewer/releases)。
+
 使用者只需解压发行 ZIP，双击目录中的 **CatiaManualViewer.exe**。无需安装 Python；请保留整个目录中的 DLL、WebEngine 资源及模型文件。
 
 第一次启动自动打开设置，选择包含 `online` 文件夹的文档根目录，然后通过右上角“更多（…）→ 更新文档索引”建立搜索索引。文档副本可以放在其他磁盘，不需要安装 CATIA 才能阅读；打开模型示例需要配置本机 CATIA。
@@ -39,5 +41,7 @@ API Key 只保存在本次进程，或读取指定环境变量，不写入 TOML�
 ## 开发
 
 仓库不再提供面向使用者的源码启动快捷方式。开发环境、JSON CLI、测试与 Nuitka 构建命令见[开发说明](docs/development.md)。
+
+GitHub CI、手动构建制品及 `v0.5.0` 标签发布流程见[CI 与 Release 说明](docs/ci-and-release.md)。
 
 设计历史：[初始分析](docs/analysis-and-design.md)、[即时翻译与中文搜索](docs/stage2.md)、[功能分类与全局设置](docs/stage3.md)。早期说明中的源码启动方式属于开发历史，当前发行方式以本页为准。

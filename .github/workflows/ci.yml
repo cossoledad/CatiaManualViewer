@@ -1,0 +1,85 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUTF8: '1'
+  PYTHONIOENCODING: utf-8
+
+jobs:
+  core:
+    name: Core / Python ${{ matrix.python }}
+    runs-on: windows-2022
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.12', '3.14']
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: ${{ matrix.python }}
+          architecture: x64
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install core and test dependencies
+        run: python -m pip install -e ".[catia,translation,dev]"
+      - name: Lint
+        run: python -m ruff check src tests scripts packaging
+      - name: Test without CATIA or installed manuals
+        run: python -m pytest --basetemp=.cache/pytest-tmp --junitxml=.cache/pytest.xml -q
+      - name: Keep test report
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: pytest-windows-${{ matrix.python }}
+          path: .cache/pytest.xml
+          include-hidden-files: true
+          if-no-files-found: warn
+          retention-days: 14
+          overwrite: true
+
+  reader:
+    name: Reader / synthetic corpus
+    runs-on: windows-2022
+    timeout-minutes: 20
+    env:
+      QT_QPA_PLATFORM: offscreen
+      QTWEBENGINE_CHROMIUM_FLAGS: --disable-gpu
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
+        with:
+          python-version: '3.12'
+          architecture: x64
+          cache: pip
+          cache-dependency-path: pyproject.toml
+      - name: Install reader test dependencies
+        run: python -m pip install -e ".[gui,catia,translation,dev]"
+      - name: Test progressive translation, cache, retry and reading position
+        run: python scripts/verify_stage5_gui.py
+      - name: Keep reader report and screenshots
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: reader-verification
+          path: |
+            data/stage5-gui.json
+            data/stage5-bilingual.png
+            data/stage5-chinese.png
+          if-no-files-found: warn
+          retention-days: 14
+          overwrite: true

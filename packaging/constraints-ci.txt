@@ -1,0 +1,3 @@
+# Compiler version used to validate the initial portable release.
+# Other dependencies use pyproject.toml ranges; dependencies.json records the resolved build.
+Nuitka==4.3.1

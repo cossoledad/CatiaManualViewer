@@ -83,6 +83,8 @@ def main():
         "version": version,
         "format": "nuitka-standalone",
         "python": sys.version.split()[0],
+        "nuitka": importlib.metadata.version("Nuitka"),
+        "source_revision": os.environ.get("GITHUB_SHA"),
         "offline_models": models is not None,
         "entry": "CatiaManualViewer.exe",
     }
@@ -132,7 +134,10 @@ def main():
     # Check the binary from a foreign directory before making the release archive.
     report = work / "portable-runtime.json"
     subprocess.run(
-        [str(release / "CatiaManualViewer.exe"), "--diagnostics", str(report)], cwd=work, check=True
+        [str(release / "CatiaManualViewer.exe"), "--diagnostics", str(report)],
+        cwd=work,
+        check=True,
+        timeout=180,
     )
     verification = json.loads(report.read_text("utf-8"))
     if not verification["compiled"] or Path(verification["application_directory"]) != release:

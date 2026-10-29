@@ -18,6 +18,8 @@ Python 3.12–3.14。当前 MinGW64 打包固定用 3.12；3.13 / 3.14 请选择
 
 ## Nuitka 构建
 
+GitHub Actions 的构建和发布入口、权限与首次标签步骤见 [CI 与 Release](ci-and-release.md)。
+
 ```powershell
 # 不含模型的版本，仍可在设置中选择在线 API 或另附模型
 .\.venv\Scripts\python.exe scripts/build_portable.py
