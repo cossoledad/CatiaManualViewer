@@ -5,10 +5,12 @@ from pathlib import Path
 
 from bs4 import BeautifulSoup, NavigableString, Tag, UnicodeDammit
 
+from catia_manual.core.legacy import LegacyLinks
 from catia_manual.core.models import Block, Document, TocEntry
 from catia_manual.core.paths import resolve_link, within_root
 
 BLOCK_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "td", "th", "pre", "dt", "dd"}
+PARSER_VERSION = "2"
 STATIC_CALL = re.compile(r"(?:GoToBody|openwin|window\.open)\s*\(\s*(['\"])(.*?)\1", re.I)
 
 
@@ -31,7 +33,9 @@ class ManualParser:
             decoded = UnicodeDammit(raw, is_html=True)
             text = decoded.unicode_markup or raw.decode("cp1252", errors="replace")
             encoding = decoded.original_encoding or "cp1252"
-        return BeautifulSoup(text, "lxml"), raw, encoding
+        soup = BeautifulSoup(text, "lxml")
+        LegacyLinks(self.root, self.source(relative)).recover(soup)
+        return soup, raw, encoding
 
     def parse(self, relative: str) -> Document:
         source = self.source(relative)
@@ -145,6 +149,8 @@ class ManualParser:
 
                         uri += "#" + quote(link.fragment)
                     tag[attr] = uri
+                elif attr == "href" and tag.name == "a" and link.kind == "external":
+                    tag[attr] = link.href
                 else:
                     del tag[attr]
             # Inline style is unnecessary for functionality; prevents external CSS requests.

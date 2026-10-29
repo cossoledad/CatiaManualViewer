@@ -9,9 +9,12 @@ environment = 'CATIA_P3.V5-6R2023.B33'
 environment_dir = 'C:\UserApp\3D\DS\Dassault Systemes\CATEnv'
 
 [translation]
-# glossary is an offline terminology aid, not a sentence translation engine.
-provider = 'glossary'
+provider = 'local'
 target_language = 'zh-CN'
+model_dir = 'data/models'
+automatic = true
+selection_delay_ms = 350
+max_selection_chars = 3000
 # Optional LibreTranslate-compatible endpoint. Install .[translation] first.
 # provider = 'libretranslate'
 # endpoint = 'http://127.0.0.1:5000/translate'

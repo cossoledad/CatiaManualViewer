@@ -1,5 +1,7 @@
+import json
+import re
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 
@@ -12,6 +14,7 @@ class Settings:
     environment_dir: Path
     homepage: str = "CATIA_P3_homepage.htm"
     translation: dict = field(default_factory=lambda: {"provider": "glossary"})
+    config_path: Path | None = None
 
 
 def load_settings(path: Path | None = None) -> Settings:
@@ -44,6 +47,8 @@ def load_settings(path: Path | None = None) -> Settings:
         result = Path(value).expanduser()
         return result.resolve() if result.is_absolute() else (path.parent / result).resolve()
 
+    translation = dict(data.get("translation", {"provider": "glossary"}))
+    translation["model_dir"] = str(absolute(translation.get("model_dir", "data/models")))
     return Settings(
         root=absolute(doc["root"]),
         database=absolute(doc["database"]),
@@ -51,5 +56,65 @@ def load_settings(path: Path | None = None) -> Settings:
         environment=catia["environment"],
         environment_dir=absolute(catia["environment_dir"]),
         homepage=doc.get("homepage", "CATIA_P3_homepage.htm"),
-        translation=data.get("translation", {"provider": "glossary"}),
+        translation=translation,
+        config_path=path,
     )
+
+
+def save_translation(settings: Settings, values: dict) -> Settings:
+    source = settings.config_path
+    if source is None:
+        source = Path.cwd() / "config.example.toml"
+    destination = (
+        source.with_name("config.local.toml") if source.name == "config.example.toml" else source
+    )
+    if source.is_file():
+        original = source.read_text(encoding="utf-8")
+    else:
+
+        def literal(value):
+            return json.dumps(str(value), ensure_ascii=False)
+
+        original = (
+            "[documentation]\nroot = "
+            + literal(settings.root)
+            + "\nhomepage = "
+            + literal(settings.homepage)
+            + "\ndatabase = "
+            + literal(settings.database)
+            + "\n\n[catia]\nlauncher = "
+            + literal(settings.launcher)
+            + "\nenvironment = "
+            + literal(settings.environment)
+            + "\nenvironment_dir = "
+            + literal(settings.environment_dir)
+            + "\n"
+        )
+    config = dict(settings.translation)
+    config.update(values)
+    section = (
+        "[translation]\n"
+        + "\n".join(
+            key
+            + " = "
+            + (
+                str(value).lower()
+                if isinstance(value, bool)
+                else str(value)
+                if isinstance(value, int)
+                else json.dumps(str(value), ensure_ascii=False)
+            )
+            for key, value in config.items()
+        )
+        + "\n"
+    )
+    pattern = r"(?ms)^\[translation\]\s*\n.*?(?=^\[|\Z)"
+    updated = (
+        re.sub(pattern, lambda _: section + "\n", original)
+        if re.search(pattern, original)
+        else (original.rstrip() + "\n\n" + section)
+    )
+    temporary = destination.with_suffix(".toml.tmp")
+    temporary.write_text(updated, encoding="utf-8")
+    temporary.replace(destination)
+    return replace(settings, translation=config, config_path=destination)

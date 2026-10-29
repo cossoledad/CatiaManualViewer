@@ -9,6 +9,7 @@ from pathlib import Path
 from catia_manual.config import load_settings
 from catia_manual.core.index import ManualIndex
 from catia_manual.core.parser import ManualParser
+from catia_manual.core.search import SearchService
 from catia_manual.core.translation import TranslationService, make_provider
 from catia_manual.integrations.catia import CatiaLauncher
 
@@ -33,6 +34,7 @@ def main(argv: list[str] | None = None) -> int:
     search.add_argument("query")
     search.add_argument("--module")
     search.add_argument("--limit", type=int, default=20)
+    search.add_argument("--explain", action="store_true", help="同时输出中文查询展开方式")
     for name in ("read", "toc", "examples"):
         command = sub.add_parser(name)
         command.add_argument("path", help="相对于文档根目录的路径")
@@ -43,7 +45,8 @@ def main(argv: list[str] | None = None) -> int:
     translate.add_argument("text")
     translate.add_argument("--target", default="zh-CN")
     sub.add_parser("stats")
-    sub.add_parser("gui")
+    gui = sub.add_parser("gui")
+    gui.add_argument("--open", dest="open_target", help="打开本地文档路径或 CATIA 文档服务 URL")
     args = parser.parse_args(argv)
     try:
         settings = load_settings(args.config)
@@ -91,7 +94,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.command == "gui":
             from catia_manual.gui.app import run
 
-            return run(settings)
+            return run(settings, args.open_target)
         else:
             with ManualIndex(settings.database, settings.root) as repository:
                 if args.command == "index":
@@ -104,11 +107,11 @@ def main(argv: list[str] | None = None) -> int:
                     emit(result)
                     return 1 if result["errors"] else 0
                 elif args.command == "search":
+                    response = SearchService(repository, settings.translation).search(
+                        args.query, args.module, args.limit
+                    )
                     emit(
-                        [
-                            asdict(hit)
-                            for hit in repository.search(args.query, args.module, args.limit)
-                        ]
+                        asdict(response) if args.explain else [asdict(hit) for hit in response.hits]
                     )
                 elif args.command == "stats":
                     emit(repository.stats())

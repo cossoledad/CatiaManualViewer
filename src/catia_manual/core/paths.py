@@ -36,15 +36,32 @@ def within_root(root: Path, path: Path) -> Path:
 
 def resolve_link(root: Path, source: Path, href: str, label: str = "") -> Link:
     href = href.strip().replace("\\", "/")
+    if re.match(r"^[a-zA-Z]:/", href):
+        href = Path(href).as_uri()
     try:
         url = urlsplit(href)
     except ValueError:
         return Link(label, href, "blocked")
     if url.scheme in {"http", "https", "mailto"}:
+        if url.hostname in {"dsdoc", "localhost", "127.0.0.1"} and "/online/" in url.path:
+            href = "online/" + url.path.split("/online/", 1)[1]
+            if url.fragment:
+                href += "#" + url.fragment
+            return resolve_link(root, root / "CATIA_P3_homepage.htm", href, label)
         return Link(label, href, "external")
     if url.scheme not in {"", "file"} or url.netloc not in {"", "localhost"}:
         return Link(label, href, "blocked")
     raw = unquote(url.path)
+    build_time = re.search(r"(?:^|/)([A-Za-z0-9_-]+)\.doc/src/(.+)$", raw)
+    if not url.scheme and build_time:
+        module, tail = build_time.groups()
+        candidates = sorted((root / "online").glob(module + "_*"))
+        preferred = next(
+            (path for path in candidates if path.name.lower() == module.lower() + "_c2"),
+            candidates[0] if len(candidates) == 1 else None,
+        )
+        if preferred:
+            raw = str(preferred / tail)
     if url.scheme == "file" and re.match(r"^/[a-zA-Z]:/", raw):
         raw = raw[1:]
     try:

@@ -1,4 +1,4 @@
-param([string]$PythonExe = '', [switch]$CoreOnly)
+param([string]$PythonExe = '', [switch]$CoreOnly, [switch]$SkipModels)
 $ErrorActionPreference = 'Stop'
 $projectRoot = Split-Path -Parent $PSScriptRoot
 Set-Location -LiteralPath $projectRoot
@@ -16,11 +16,15 @@ if (-not (Test-Path -LiteralPath '.venv\Scripts\python.exe')) {
     if ($LASTEXITCODE -ne 0) { throw '创建虚拟环境失败。' }
 }
 $venvPython = Join-Path $projectRoot '.venv\Scripts\python.exe'
-$extras = if ($CoreOnly) { '.[dev]' } else { '.[gui,catia,translation,dev]' }
+$extras = if ($CoreOnly) { '.[dev]' } else { '.[gui,catia,translation,offline,dev]' }
 & $venvPython -m pip install -e $extras
 if ($LASTEXITCODE -ne 0) { throw '依赖安装失败。' }
 if (-not (Test-Path -LiteralPath 'config.local.toml')) {
     Copy-Item -LiteralPath 'config.example.toml' -Destination 'config.local.toml'
+}
+if (-not $CoreOnly -and -not $SkipModels) {
+    & $venvPython scripts/setup_translation.py
+    if ($LASTEXITCODE -ne 0) { throw '离线模型安装失败，可稍后单独运行 scripts/setup_translation.py 重试。' }
 }
 & $venvPython -m catia_manual doctor
 if ($LASTEXITCODE -ne 0) { throw '环境检查失败。' }

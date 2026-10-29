@@ -2,18 +2,21 @@
 
 CATIA V5 本地帮助文档查看器的 Python 基础原型。核心解析、SQLite 搜索与翻译接口独立于 GUI，也可供 agent 通过 JSON CLI 使用。
 
-完整调查、架构与迭代边界见 [分析与基本设计](docs/analysis-and-design.md)。
+完整调查与架构见 [分析与基本设计](docs/analysis-and-design.md)，当前 v0.2 行为、API 配置和验证见 [第二阶段说明](docs/stage2.md)。
 
 ## 当前能力
 
 - 读取本机旧 HTML，提取标题、正文块、锚点、资源和示例链接。
 - 从静态 Site Map 恢复层级目录，识别框架页和旧导航静态调用。
-- SQLite FTS5 英文搜索、模块筛选、标题优先、摘要与增量索引。
+- SQLite FTS5 英文检索，中文术语扩展与查询翻译，支持模块筛选、标题优先和增量索引。
 - PySide6 桌面阅读、图片/表格、目录、搜索与示例列表。
 - CATIA COM 会话复用及 CATSTART 回退；CLI 默认只显示启动参数。
-- 选中文字后的离线术语辅助、翻译缓存和可配置 LibreTranslate adapter。
+- 单词／句子选中即译，350 ms 防抖、请求合并、过期结果过滤与翻译缓存。
+- 翻译设置支持大模型兼容 API、LibreTranslate、本机英中双向模型；可测试服务。
+- 恢复 `.doc/src` 链接及 API 文档中静态脚本生成的链接；保留页面锚点与模型链接。
+- 前进／后退、Alt+←／Alt+→、鼠标侧键与历史下拉菜单，恢复页面滚动位置。
 
-默认术语辅助不是整句翻译；中文全文翻译和中文搜索待下一阶段实现。CATIA 的真实模型打开仍需交互联调。
+当前本机备用模型已安装。你的真实 API 地址与模型信息尚未配置，可稍后在“翻译设置”中填写并测试。中文搜索查询英文原文，尚未建立整库译文索引。CATIA 的真实模型打开仍需交互联调。
 
 ## 本机启动
 
@@ -43,7 +46,7 @@ cd C:\Code\CatiaManualViewer
 .\scripts\bootstrap.ps1
 ```
 
-只安装核心与开发工具：添加 `-CoreOnly`。GUI、CATIA 与 HTTP 翻译的依赖是独立 extras：`.[gui,catia,translation,dev]`。
+只安装核心与开发工具：添加 `-CoreOnly`。默认 bootstrap 包含 `.[gui,catia,translation,offline,dev]` 并安装英中双向模型。仅使用 API 时可添加 `-SkipModels`；离线推理是独立的 `offline` extra。
 
 当前 Windows / Python 3.12 的精确版本记录在 `requirements.lock.txt`。需要重现时：
 
@@ -64,6 +67,8 @@ cd C:\Code\CatiaManualViewer
 # 模块范围和有限扫描；--force 强制重新解析
 .\.venv\Scripts\python.exe -m catia_manual index --module prtug_C2
 .\.venv\Scripts\python.exe -m catia_manual search 'creating pads' --module prtug_C2
+.\.venv\Scripts\python.exe -m catia_manual search '装配约束' --explain
+.\.venv\Scripts\python.exe -m catia_manual search '曲面偏置'
 .\.venv\Scripts\python.exe -m catia_manual read online/prtug_C2/prtugbt0501.htm
 .\.venv\Scripts\python.exe -m catia_manual toc online/prtug_C2/prtugsm.htm
 .\.venv\Scripts\python.exe -m catia_manual examples online/prtug_C2/prtugbt0501.htm
@@ -91,7 +96,23 @@ with ManualIndex(settings.database, settings.root) as index:
 
 ## 配置整句翻译
 
-先运行你自己的 LibreTranslate-compatible 服务，再在 `config.local.toml` 中替换配置：
+在阅读器右上角点击“翻译设置”，选择服务、填写地址和模型名，输入本次运行使用的 API Key，然后“测试当前服务”并保存。默认勾选“划词即译”，无需点击翻译按钮。
+
+大模型兼容 API 配置示例（模型名与地址由你的服务提供）：
+
+```toml
+[translation]
+provider = 'chat-completions'
+endpoint = 'https://your-provider.example/v1'
+model = 'your-model-name'
+api_key_env = 'CATIA_TRANSLATION_API_KEY'
+target_language = 'zh-CN'
+automatic = true
+selection_delay_ms = 350
+max_selection_chars = 3000
+```
+
+也支持 LibreTranslate-compatible 服务：
 
 ```toml
 [translation]
@@ -101,17 +122,27 @@ endpoint = 'http://127.0.0.1:5000/translate'
 api_key_env = 'CATIA_TRANSLATION_API_KEY'
 ```
 
-需要 key 的服务使用同名环境变量提供，不把 key 写进配置文件。当前没有自动部署翻译引擎；设置远程 endpoint 后，执行翻译会发送所选文字到该端点。修改配置后重启阅读器。
+密钥可在设置中输入（只存于当前进程），或从同名环境变量读取，不写进配置文件。配置 API 后，选中文字及需要机器翻译的中文查询会发送到该端点；纯术语查询保持本地。界面修改立即生效，手工修改配置文件后需重启。
+
+本机备用模型安装与单独重建：
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install -e '.[offline]'
+.\.venv\Scripts\python.exe scripts/setup_translation.py
+```
+
+选择 `provider = 'local'` 后使用 `data/models` 内的英中双向模型，运行时不下载模型。通用模型对 CAD 语境的翻译有限，侧栏同时显示专业术语。详细边界见 [第二阶段说明](docs/stage2.md)。
 
 ## 验证与目录
 
 ```powershell
 .\.venv\Scripts\python.exe -m pytest --basetemp=.cache/pytest-tmp -q
-.\.venv\Scripts\ruff.exe check src tests scripts/smoke_gui.py
+.\.venv\Scripts\ruff.exe check src tests scripts
 .\.venv\Scripts\python.exe scripts/smoke_gui.py
+.\.venv\Scripts\python.exe scripts/verify_stage2_gui.py
 ```
 
-GUI smoke test 需要已有索引，使用 offscreen Qt 渲染并写入 `data/gui-smoke.png`，不启动 CATIA。真实搜索和索引记录见 [本机验证](docs/verification.md)。
+GUI smoke test 需要已有索引，使用 offscreen Qt 渲染并写入 `data/gui-smoke.png`。第二阶段 GUI 验证在 Windows 桌面短暂显示阅读器，检查自动选词、句子翻译、旧请求过滤、真实链接和前后导航，写入 `data/stage2-gui.png`；它使用本机模型并捕获示例打开请求，不访问远程 API 或启动 CATIA。第一阶段记录见 [本机验证](docs/verification.md)。
 
 ```text
 src/catia_manual/

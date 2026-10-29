@@ -13,7 +13,8 @@ database = 'data/index.sqlite3'
 launcher = 'bin/CATSTART.exe'
 environment = 'custom-environment'
 environment_dir = 'CATEnv'
-""", encoding="utf-8"
+""",
+        encoding="utf-8",
     )
     monkeypatch.chdir(tmp_path)
     settings = config.load_settings(settings_file)

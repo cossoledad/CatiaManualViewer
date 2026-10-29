@@ -1,12 +1,12 @@
 import json
-import re
 import sqlite3
 from collections.abc import Callable
 from dataclasses import asdict
 from pathlib import Path
 
 from catia_manual.core.models import Document, SearchHit
-from catia_manual.core.parser import ManualParser
+from catia_manual.core.parser import PARSER_VERSION, ManualParser
+from catia_manual.core.query import plan_query
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS metadata(key TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -48,21 +48,24 @@ class ManualIndex:
         self.connection.row_factory = sqlite3.Row
         self.root = root.resolve()
         try:
-            self.connection.execute("PRAGMA journal_mode=WAL")
+            mode = self.connection.execute("PRAGMA journal_mode").fetchone()[0]
+            if mode.lower() != "wal":
+                self.connection.execute("PRAGMA journal_mode=WAL")
             version = self.connection.execute("PRAGMA user_version").fetchone()[0]
             if version not in (0, 1):
                 raise ValueError(f"不支持的索引版本: {version}，请使用新的数据库路径")
-            self.connection.executescript(SCHEMA)
+            if version == 0:
+                self.connection.executescript(SCHEMA)
             previous = self.connection.execute(
                 "SELECT value FROM metadata WHERE key='root'"
             ).fetchone()
             if previous and Path(previous[0]).resolve() != self.root:
                 raise ValueError("索引属于另一文档目录，请配置独立数据库")
-            self.connection.execute(
-                "INSERT OR IGNORE INTO metadata VALUES('root',?)", (str(self.root),)
-            )
-            self.connection.execute("PRAGMA user_version=1")
-            self.connection.commit()
+            if not previous:
+                self.connection.execute("INSERT INTO metadata VALUES('root',?)", (str(self.root),))
+            if version == 0:
+                self.connection.execute("PRAGMA user_version=1")
+                self.connection.commit()
         except Exception:
             self.connection.close()
             raise
@@ -106,6 +109,10 @@ class ManualIndex:
         progress: Callable[[dict], None] | None = None,
     ) -> dict:
         parser = ManualParser(self.root)
+        stored_version = self.connection.execute(
+            "SELECT value FROM metadata WHERE key='parser_version'"
+        ).fetchone()
+        force = force or not stored_version or stored_version[0] != PARSER_VERSION
         if not self.root.is_dir():
             raise FileNotFoundError(f"文档目录不存在: {self.root}")
         if module and (Path(module).name != module or module in {".", ".."}):
@@ -162,17 +169,25 @@ class ManualIndex:
                         self.connection.execute("DELETE FROM documents WHERE path=?", (relative,))
                         report["deleted"] += 1
             self.connection.commit()
+            if not module and limit is None and not report["errors"]:
+                self.connection.execute(
+                    "INSERT OR REPLACE INTO metadata VALUES('parser_version',?)", (PARSER_VERSION,)
+                )
+                self.connection.commit()
         except BaseException:
             self.connection.rollback()
             raise
         return report
 
-    def search(self, query: str, module: str | None = None, limit: int = 30) -> list[SearchHit]:
+    def search(
+        self, query: str, module: str | None = None, limit: int = 30, *, match: str | None = None
+    ) -> list[SearchHit]:
         # Plain user input cannot inject FTS operators or cause MATCH syntax errors.
-        words = re.findall(r"[^\W_]+", query, re.UNICODE)
-        if not words:
+        if match is None:
+            plan = plan_query(query)
+            match = "" if plan.unknown else plan.match
+        if not match:
             return []
-        match = " AND ".join('"' + word.replace('"', '""') + '"*' for word in words)
         sql = """SELECT d.path,d.title,d.module,
         snippet(documents_fts,1,'[',']',' … ',36) AS snippet,
         bm25(documents_fts,8.0,1.0) AS score
