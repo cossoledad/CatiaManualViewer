@@ -33,7 +33,7 @@ class LocalTranslationProvider:
             if (manifest.is_file())
             else "missing"
         )
-        self.name = f"local-argos-v2:{self.model_dir}:{self.revision}"
+        self.name = f"local-argos-v3:{self.model_dir}:{self.revision}"
 
     def translate(self, text: str, target: str) -> str:
         from catia_manual.core.translation import GLOSSARY
@@ -52,6 +52,24 @@ class LocalTranslationProvider:
             for variant in variants:
                 if variant in GLOSSARY:
                     return GLOSSARY[variant]
+            heading = re.fullmatch(
+                r"(creating|editing|defining|using|deleting|selecting|about)\s+(?:the\s+)?(.+)",
+                term,
+            )
+            if heading:
+                verb, noun = heading.groups()
+                for variant in (noun, noun.removesuffix("s"), noun.removesuffix("es")):
+                    if variant in GLOSSARY:
+                        action = {
+                            "creating": "创建",
+                            "editing": "编辑",
+                            "defining": "定义",
+                            "using": "使用",
+                            "deleting": "删除",
+                            "selecting": "选择",
+                            "about": "关于",
+                        }[verb]
+                        return action + GLOSSARY[variant]
         folder = self.model_dir / f"{source}_{target}"
         if not (folder / "model" / "model.bin").is_file():
             raise FileNotFoundError(

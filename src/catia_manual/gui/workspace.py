@@ -123,6 +123,9 @@ class WorkspaceUI:
         self.tools_action.setChecked(self.settings.appearance.get("show_tools", True))
         self.tools_action.triggered.connect(self.toggle_tools)
         menu.addAction(self.tools_action)
+        menu.addSeparator()
+        macro_action = menu.addAction("导出 CATIA 帮助宏…")
+        macro_action.triggered.connect(self.export_catia_macros)
         self.settings_button = QToolButton()
         self.settings_button.setDefaultAction(self.settings_action)
         self.settings_button.setToolTip("设置 · Ctrl+,")
@@ -195,6 +198,7 @@ class WorkspaceUI:
         self.page_title.setMinimumWidth(0)
         nav.addSpacing(8)
         nav.addWidget(self.page_title, 1)
+        self.add_page_controls(nav)
         center.addLayout(nav)
         self.center_stack = QStackedWidget()
         self.home_scroll = QScrollArea()
@@ -307,6 +311,7 @@ class WorkspaceUI:
 
     def show_home(self, category_id=None, remember=True, history_index=None):
         self.save_location_scroll()
+        self.detach_reading_page()
         self.navigation_generation += 1
         self.page_loading = False
         self.expected_render = None

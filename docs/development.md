@@ -23,7 +23,7 @@ Python 3.12–3.14。当前 MinGW64 打包固定用 3.12；3.13 / 3.14 请选择
 .\.venv\Scripts\python.exe scripts/build_portable.py
 
 # 包含模型的完整便携版；输出目录必须尚不存在
-.\.venv\Scripts\python.exe scripts/build_portable.py --models data/models --output-dir dist/CatiaManualViewer-0.4.0-win64
+.\.venv\Scripts\python.exe scripts/build_portable.py --models data/models --output-dir dist/CatiaManualViewer-0.5.0-portable
 
 # 机器已有 MSVC 2022 时
 .\.venv\Scripts\python.exe scripts/build_portable.py --compiler msvc
@@ -54,8 +54,15 @@ JSON CLI 和 `core` 不依赖 Qt。调用时使用参数列表，并以 UTF-8 �
 .\.venv\Scripts\python.exe scripts/verify_stage2_gui.py
 .\.venv\Scripts\python.exe scripts/verify_stage3_gui.py
 .\.venv\Scripts\python.exe scripts/verify_stage4_gui.py
+.\.venv\Scripts\python.exe scripts/verify_stage5_gui.py
+.\.venv\Scripts\python.exe scripts/verify_real_page_translation.py
+.\.venv\Scripts\python.exe scripts/verify_help_ipc.py
 ```
 
 原生 GUI 验证会短暂显示窗口，使用独立测试配置和离线模型；示例链接被捕获，不实际启动 CATIA。阶段 2 验证选词 / 句子 / 过期请求 / 链接 / 导航；阶段 3 验证分类 / 设置 / 迁移 / 侧键；阶段 4 验证新按钮 / 菜单 / 底栏。截图和 JSON 报告在忽略提交的 `data` 中。
 
 `scripts/setup_translation.py` 安装英中双向模型；`scripts/build_icons.py` 重建应用位图。二者均属于开发工具。当前环境的固定依赖版本见 `requirements.lock.txt`。
+
+`verify_stage5_gui.py` 使用构造语料及可控 provider，检查渐进加载、优先级、暂停、失败重试、三种模式、锚点、历史位置和 SQLite 复用。`verify_real_page_translation.py` 使用真实 Creating Pads 和离线模型；`verify_help_ipc.py` 启动实际第二进程检查消息投递。三者都不访问远程翻译服务。
+
+`verify_catia_macro.py` 只连接已运行的 CATIA。无参数运行只读的工作台探针；`--executable <便携 EXE> --macro ManualViewer.catvbs` 实际执行导出的宏；加 `--inspect-context` 仅返回将启动的参数，不启动查看器。该脚本不创建模型或替换 F1。

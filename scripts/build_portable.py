@@ -77,6 +77,7 @@ def main():
         defaults = defaults.replace("provider = 'glossary'", "provider = 'local'")
     (release / "config.default.toml").write_text(defaults, encoding="utf-8")
     shutil.copy2(PROJECT / "packaging/使用说明.txt", release)
+    shutil.copy2(PROJECT / "packaging/CATIA宏安装说明.txt", release)
     manifest = {
         "product": "Catia Manual Viewer",
         "version": version,

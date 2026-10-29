@@ -73,6 +73,7 @@ QPushButton#primary {background:#1b777a;border-color:#1b777a;color:white;font-we
 QPushButton#primary:hover {background:#14666a;}
 QToolButton {background:transparent;border:0;border-radius:6px;padding:7px;}
 QToolButton:hover {background:#e6eef4;}
+QToolButton#readingMode:checked {background:#daeeeb;color:#176e73;}
 QToolButton:disabled {color:#b2bdc6;}
 QToolButton {min-width:20px;min-height:20px;}
 QTreeWidget,QListWidget,QTextBrowser {background:white;border:0;outline:0;}

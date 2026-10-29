@@ -8,6 +8,7 @@ class Location:
     title: str = ""
     x: float = 0
     y: float = 0
+    reading_anchor: dict | None = None
 
 
 class NavigationHistory:
