@@ -1,4 +1,5 @@
 name: CI
+run-name: Portable build / ${{ github.ref_name }}
 
 on:
   push:
@@ -6,6 +7,13 @@ on:
   pull_request:
   workflow_dispatch:
   workflow_call:
+    outputs:
+      tag:
+        description: Version tag for the built archive
+        value: ${{ jobs.build.outputs.tag }}
+      artifact:
+        description: Downloadable portable artifact name
+        value: ${{ jobs.build.outputs.artifact }}
 
 permissions:
   contents: read
@@ -15,48 +23,13 @@ env:
   PYTHONIOENCODING: utf-8
 
 jobs:
-  core:
-    name: Core / Python ${{ matrix.python }}
+  build:
+    name: Build Windows x64 portable
     runs-on: windows-2022
-    timeout-minutes: 20
-    strategy:
-      fail-fast: false
-      matrix:
-        python: ['3.12', '3.14']
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7
-        with:
-          python-version: ${{ matrix.python }}
-          architecture: x64
-          cache: pip
-          cache-dependency-path: pyproject.toml
-      - name: Install core and test dependencies
-        run: python -m pip install -e ".[catia,translation,dev]"
-      - name: Lint
-        run: python -m ruff check src tests scripts packaging
-      - name: Test without CATIA or installed manuals
-        run: python -m pytest --basetemp=.cache/pytest-tmp --junitxml=.cache/pytest.xml -q
-      - name: Keep test report
-        if: always()
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
-        with:
-          name: pytest-windows-${{ matrix.python }}
-          path: .cache/pytest.xml
-          include-hidden-files: true
-          if-no-files-found: warn
-          retention-days: 14
-          overwrite: true
-
-  reader:
-    name: Reader / synthetic corpus
-    runs-on: windows-2022
-    timeout-minutes: 20
-    env:
-      QT_QPA_PLATFORM: offscreen
-      QTWEBENGINE_CHROMIUM_FLAGS: --disable-gpu
+    timeout-minutes: 90
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      artifact: ${{ steps.release.outputs.artifact }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -66,20 +39,61 @@ jobs:
           python-version: '3.12'
           architecture: x64
           cache: pip
-          cache-dependency-path: pyproject.toml
-      - name: Install reader test dependencies
-        run: python -m pip install -e ".[gui,catia,translation,dev]"
-      - name: Test progressive translation, cache, retry and reading position
-        run: python scripts/verify_stage5_gui.py
-      - name: Keep reader report and screenshots
+          cache-dependency-path: |
+            pyproject.toml
+            packaging/constraints-ci.txt
+      - name: Check version and release notes
+        id: release
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          if ($env:GITHUB_REF.StartsWith('refs/tags/') -and $env:GITHUB_EVENT_NAME -eq 'push') {
+            python scripts/release.py metadata --tag "$env:RELEASE_TAG"
+          } else {
+            python scripts/release.py metadata
+          }
+      - name: Install build dependencies
+        run: python -m pip install -c packaging/constraints-ci.txt -e ".[gui,catia,translation,offline,packaging]"
+      - name: Cache pinned offline models
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .cache/offline-models
+          key: argos-${{ hashFiles('packaging/models.lock.json') }}
+      - name: Install and verify model archives
+        run: python scripts/setup_translation.py --model-dir .cache/offline-models --lock packaging/models.lock.json
+      - name: Cache Nuitka dependency scans and compiler cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        with:
+          path: .cache/nuitka/downloads
+          key: nuitka-windows2022-msvc-py312-${{ hashFiles('packaging/constraints-ci.txt', 'packaging/nuitka-package.config.yml') }}-${{ github.sha }}
+          restore-keys: |
+            nuitka-windows2022-msvc-py312-${{ hashFiles('packaging/constraints-ci.txt', 'packaging/nuitka-package.config.yml') }}-
+      - name: Compile and package portable application
+        env:
+          RELEASE_DIRECTORY: ${{ steps.release.outputs.directory }}
+        run: python scripts/build_portable.py --compiler msvc --jobs 2 --skip-runtime-check --models .cache/offline-models --output-dir "$env:RELEASE_DIRECTORY"
+      - name: Check archive contents and create SHA-256
+        env:
+          RELEASE_ARCHIVE: ${{ steps.release.outputs.archive }}
+        run: python scripts/release.py verify "$env:RELEASE_ARCHIVE" --write-checksum
+      - name: Keep downloadable release assets
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
+        with:
+          name: ${{ steps.release.outputs.artifact }}
+          path: |
+            ${{ steps.release.outputs.archive }}
+            ${{ steps.release.outputs.archive }}.sha256
+          compression-level: 0
+          if-no-files-found: error
+          retention-days: 14
+          overwrite: true
+      - name: Keep compiler report
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7
         with:
-          name: reader-verification
+          name: nuitka-diagnostics-${{ github.run_attempt }}
           path: |
-            data/stage5-gui.json
-            data/stage5-bilingual.png
-            data/stage5-chinese.png
+            .cache/nuitka/compilation-report.xml
+          include-hidden-files: true
           if-no-files-found: warn
           retention-days: 14
-          overwrite: true

@@ -19,6 +19,9 @@ def main():
     parser.add_argument("--compiler", choices=("mingw64", "msvc"), default="mingw64")
     parser.add_argument("--jobs", type=int, default=min(8, os.cpu_count() or 2))
     parser.add_argument("--output-dir", type=Path)
+    parser.add_argument(
+        "--skip-runtime-check", action="store_true", help="package without launching the built EXE"
+    )
     args = parser.parse_args()
     if sys.platform != "win32":
         parser.error("Windows portable releases must be built on Windows")
@@ -131,17 +134,18 @@ def main():
                     target.parent.mkdir(parents=True, exist_ok=True)
                     shutil.copy2(source, target)
     (release / "dependencies.json").write_text(json.dumps(inventory, indent=2), encoding="utf-8")
-    # Check the binary from a foreign directory before making the release archive.
-    report = work / "portable-runtime.json"
-    subprocess.run(
-        [str(release / "CatiaManualViewer.exe"), "--diagnostics", str(report)],
-        cwd=work,
-        check=True,
-        timeout=180,
-    )
-    verification = json.loads(report.read_text("utf-8"))
-    if not verification["compiled"] or Path(verification["application_directory"]) != release:
-        raise RuntimeError("Portable runtime resolved the wrong application directory")
+    if not args.skip_runtime_check:
+        # Local builds can check the binary from a foreign directory before archiving.
+        report = work / "portable-runtime.json"
+        subprocess.run(
+            [str(release / "CatiaManualViewer.exe"), "--diagnostics", str(report)],
+            cwd=work,
+            check=True,
+            timeout=180,
+        )
+        verification = json.loads(report.read_text("utf-8"))
+        if not verification["compiled"] or Path(verification["application_directory"]) != release:
+            raise RuntimeError("Portable runtime resolved the wrong application directory")
     archive = shutil.make_archive(
         str(release), "zip", root_dir=release.parent, base_dir=release.name
     )
