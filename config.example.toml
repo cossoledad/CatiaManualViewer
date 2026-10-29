@@ -1,0 +1,18 @@
+[documentation]
+root = 'C:\UserApp\3D\DS\Dassault Systemes\B33doc\English'
+homepage = 'CATIA_P3_homepage.htm'
+database = 'data/manuals.sqlite3'
+
+[catia]
+launcher = 'C:\UserApp\3D\DS\Dassault Systemes\B33\win_b64\code\bin\CATSTART.exe'
+environment = 'CATIA_P3.V5-6R2023.B33'
+environment_dir = 'C:\UserApp\3D\DS\Dassault Systemes\CATEnv'
+
+[translation]
+# glossary is an offline terminology aid, not a sentence translation engine.
+provider = 'glossary'
+target_language = 'zh-CN'
+# Optional LibreTranslate-compatible endpoint. Install .[translation] first.
+# provider = 'libretranslate'
+# endpoint = 'http://127.0.0.1:5000/translate'
+# api_key_env = 'CATIA_TRANSLATION_API_KEY'

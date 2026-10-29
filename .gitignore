@@ -1,0 +1,12 @@
+.venv/
+.cache/
+data/
+dist/
+build/
+*.egg-info/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.py[cod]
+config.local.toml
+*.log

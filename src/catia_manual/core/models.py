@@ -1,0 +1,49 @@
+from dataclasses import dataclass, field
+
+
+@dataclass(frozen=True)
+class Link:
+    label: str
+    href: str
+    kind: str
+    target: str | None = None
+    fragment: str = ""
+    exists: bool = False
+
+
+@dataclass(frozen=True)
+class Block:
+    id: str
+    kind: str
+    text: str
+
+
+@dataclass
+class Document:
+    path: str
+    title: str
+    module: str
+    kind: str
+    encoding: str
+    content_hash: str
+    text: str
+    blocks: list[Block] = field(default_factory=list)
+    links: list[Link] = field(default_factory=list)
+    headings: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class SearchHit:
+    path: str
+    title: str
+    module: str
+    snippet: str
+    score: float
+
+
+@dataclass(frozen=True)
+class TocEntry:
+    title: str
+    path: str
+    depth: int
+    fragment: str = ""
