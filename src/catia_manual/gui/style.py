@@ -17,6 +17,8 @@ def icon(name: str, color="#60758a") -> QIcon:
         "home": "M3 10l9-7 9 7M5 9v12h5v-7h4v7h5V9",
         "back": "M14 5l-7 7 7 7M7 12h13",
         "forward": "M10 5l7 7-7 7M4 12h13",
+        "history": "M3 4v5h5M3 9a9 9 0 1 1 1 10M12 7v5l3 2",
+        "more": "M5 11v2M12 11v2M19 11v2",
         "search": "M20 20l-5-5M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0",
         "settings": "M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6",
         "refresh": "M20 7v5h-5M4 17v-5h5M5 8a8 8 0 0 1 14-2l1 6M4 12l1 6a8 8 0 0 0 14-2",
@@ -64,6 +66,7 @@ padding:7px 9px;selection-background-color:#c1e2df;}
 QLineEdit#search {background:#f5f8fb;padding:9px 12px;}
 QLineEdit:focus,QComboBox:focus,QSpinBox:focus {border:1px solid #579b9b;}
 QComboBox::drop-down {border:0;width:24px;}
+QComboBox {padding-right:30px;}
 QPushButton {background:white;border:1px solid #dce5ed;border-radius:7px;padding:7px 12px;}
 QPushButton:hover {background:#edf5f6;border-color:#b9d6d8;}
 QPushButton#primary {background:#1b777a;border-color:#1b777a;color:white;font-weight:600;}
@@ -71,6 +74,7 @@ QPushButton#primary:hover {background:#14666a;}
 QToolButton {background:transparent;border:0;border-radius:6px;padding:7px;}
 QToolButton:hover {background:#e6eef4;}
 QToolButton:disabled {color:#b2bdc6;}
+QToolButton {min-width:20px;min-height:20px;}
 QTreeWidget,QListWidget,QTextBrowser {background:white;border:0;outline:0;}
 QTreeWidget::item {padding:7px 4px;border-radius:5px;}
 QTreeWidget::item:hover {background:#f1f6f9;}
@@ -84,6 +88,8 @@ QScrollArea {border:0;background:transparent;}
 QScrollArea>QWidget>QWidget {background:transparent;}
 QSplitter::handle {background:#edf2f6;width:8px;}
 QStatusBar {background:#f3f6fa;color:#7b8b99;font-size:11px;}
+QLabel#translationStatus {color:#667e8d;padding:3px 12px;}
+QStatusBar::item {border:0;}
 QMenu {background:white;border:1px solid #dce5ed;padding:5px;}
 QMenu::item {padding:8px 24px;border-radius:4px;}
 QMenu::item:selected {background:#e8f3f2;}
@@ -94,3 +100,8 @@ QScrollBar::handle:vertical {background:#c6d2dc;min-height:28px;border-radius:3p
 QScrollBar::add-line:vertical,QScrollBar::sub-line:vertical {height:0;}
 QScrollBar::add-page:vertical,QScrollBar::sub-page:vertical {background:transparent;}
 """
+STYLESHEET += (
+    'QComboBox::down-arrow {image:url("'
+    + (ASSETS / "chevron-down.svg").as_posix()
+    + '");width:12px;height:12px;}'
+)

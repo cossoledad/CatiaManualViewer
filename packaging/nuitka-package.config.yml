@@ -1,0 +1,9 @@
+- module-name: 'ctranslate2'
+  dlls:
+    - from_filenames:
+        relative_path: '.'
+        prefixes:
+          - 'ctranslate2'
+          - 'libiomp5md'
+          - 'cudnn64_9'
+      when: 'win32'

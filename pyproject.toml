@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "catia-manual-viewer"
-version = "0.3.0"
+version = "0.4.0"
 description = "Local CATIA V5 documentation parser, search service and desktop reader"
 readme = "README.md"
 requires-python = ">=3.12,<3.15"
@@ -16,10 +16,10 @@ catia = ["pywin32>=308; sys_platform == 'win32'"]
 translation = ["httpx>=0.28,<1"]
 offline = ["ctranslate2>=4.6,<5", "sentencepiece>=0.2,<0.3", "httpx>=0.28,<1"]
 dev = ["pytest>=8,<10", "ruff>=0.11,<1", "build>=1.2,<2"]
+packaging = ["Nuitka>=4.3,<5", "ordered-set>=4,<5", "zstandard>=0.23,<1"]
 
 [project.scripts]
 catia-doc = "catia_manual.cli:main"
-catia-manual-viewer = "catia_manual.gui.app:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

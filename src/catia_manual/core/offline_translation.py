@@ -54,7 +54,9 @@ class LocalTranslationProvider:
                     return GLOSSARY[variant]
         folder = self.model_dir / f"{source}_{target}"
         if not (folder / "model" / "model.bin").is_file():
-            raise FileNotFoundError("离线模型未安装，请运行 python scripts/setup_translation.py")
+            raise FileNotFoundError(
+                "未找到离线模型，请在设置中选择模型目录，或切换到其他翻译服务。"
+            )
         with INFERENCE_LOCK:
             tokenizer, translator, prefix = load_model(str(folder), self.revision)
             paragraphs = []

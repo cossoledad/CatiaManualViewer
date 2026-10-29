@@ -26,6 +26,5 @@ if (-not $CoreOnly -and -not $SkipModels) {
     & $venvPython scripts/setup_translation.py
     if ($LASTEXITCODE -ne 0) { throw '离线模型安装失败，可稍后单独运行 scripts/setup_translation.py 重试。' }
 }
-if (-not $CoreOnly) { & (Join-Path $PSScriptRoot 'create_shortcut.ps1') }
 & $venvPython -m catia_manual doctor
 if ($LASTEXITCODE -ne 0) { throw '环境检查失败。' }

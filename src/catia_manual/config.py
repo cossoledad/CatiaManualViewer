@@ -8,6 +8,7 @@ from pathlib import Path
 import tomlkit
 
 from catia_manual.core.providers import provider_profile
+from catia_manual.runtime import application_directory, is_compiled
 
 INSTALLATION = Path(r"C:\UserApp\3D\DS\Dassault Systemes")
 APPEARANCE = {
@@ -50,16 +51,20 @@ def database_for_root(database: Path, root: Path) -> Path:
 
 
 def load_settings(path: Path | None = None) -> Settings:
-    project = Path(__file__).resolve().parents[2]
+    project = application_directory() if is_compiled() else Path(__file__).resolve().parents[2]
     if path is None:
-        candidates = [
-            Path.cwd() / "config.local.toml",
-            project / "config.local.toml",
-            Path.cwd() / "config.example.toml",
-            project / "config.example.toml",
-        ]
+        candidates = (
+            [project / "config.local.toml", project / "config.default.toml"]
+            if is_compiled()
+            else [
+                Path.cwd() / "config.local.toml",
+                project / "config.local.toml",
+                Path.cwd() / "config.example.toml",
+                project / "config.example.toml",
+            ]
+        )
         path = next((candidate for candidate in candidates if candidate.is_file()), None)
-    base = path.resolve().parent if path else Path.cwd().resolve()
+    base = path.resolve().parent if path else (project if is_compiled() else Path.cwd().resolve())
     data = tomllib.loads(path.read_text(encoding="utf-8-sig")) if path else {}
     doc, catia = data.get("documentation", {}), data.get("catia", {})
 
@@ -67,7 +72,9 @@ def load_settings(path: Path | None = None) -> Settings:
         result = Path(value).expanduser()
         return result.resolve() if result.is_absolute() else (base / result).resolve()
 
-    root = absolute(doc.get("root", INSTALLATION / "B33doc/English"))
+    root = absolute(
+        doc.get("root", "manuals/English" if is_compiled() else INSTALLATION / "B33doc/English")
+    )
     translation = dict(data.get("translation", {"provider": "local"}))
     translation.setdefault("provider", "local")
     translation.setdefault("automatic", True)
@@ -80,21 +87,34 @@ def load_settings(path: Path | None = None) -> Settings:
         root=root,
         database=database_for_root(absolute(doc.get("database", "data/manuals.sqlite3")), root),
         launcher=absolute(
-            catia.get("launcher", INSTALLATION / "B33/win_b64/code/bin/CATSTART.exe")
+            catia.get(
+                "launcher",
+                "catia/CATSTART.exe"
+                if is_compiled()
+                else INSTALLATION / "B33/win_b64/code/bin/CATSTART.exe",
+            )
         ),
-        environment=catia.get("environment", "CATIA_P3.V5-6R2023.B33"),
-        environment_dir=absolute(catia.get("environment_dir", INSTALLATION / "CATEnv")),
+        environment=catia.get("environment", "" if is_compiled() else "CATIA_P3.V5-6R2023.B33"),
+        environment_dir=absolute(
+            catia.get(
+                "environment_dir", "catia/CATEnv" if is_compiled() else INSTALLATION / "CATEnv"
+            )
+        ),
         homepage=doc.get("homepage", "CATIA_P3_homepage.htm"),
         translation=translation,
-        config_path=path.resolve() if path else None,
+        config_path=path.resolve()
+        if path
+        else (project / "config.local.toml" if is_compiled() else None),
         appearance={**APPEARANCE, **data.get("appearance", {})},
     )
 
 
 def save_settings(settings: Settings, changes: dict) -> Settings:
-    source = settings.config_path or Path.cwd() / "config.example.toml"
+    source = settings.config_path or application_directory() / "config.example.toml"
     destination = (
-        source.with_name("config.local.toml") if source.name == "config.example.toml" else source
+        source.with_name("config.local.toml")
+        if source.name in {"config.example.toml", "config.default.toml"}
+        else source
     )
     document = (
         tomlkit.parse(source.read_text(encoding="utf-8-sig"))

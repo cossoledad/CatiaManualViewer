@@ -29,6 +29,7 @@ from catia_manual.core.index import ManualIndex
 from catia_manual.core.navigation import Location, NavigationHistory
 from catia_manual.core.parser import ManualParser
 from catia_manual.core.paths import resolve_link
+from catia_manual.core.providers import PROVIDERS
 from catia_manual.core.search import SearchService
 from catia_manual.core.translation import TranslationService, make_provider
 from catia_manual.gui.settings import GlobalSettings
@@ -123,6 +124,8 @@ class MainWindow(WorkspaceUI, QMainWindow):
             QTimer.singleShot(0, lambda: self.open_target(initial_target))
         else:
             QTimer.singleShot(0, self.show_home)
+        if not (settings.root / "online").is_dir():
+            QTimer.singleShot(250, self.configure_settings)
 
     def create_reader(self):
         self.profile = QWebEngineProfile(self)
@@ -429,6 +432,9 @@ class MainWindow(WorkspaceUI, QMainWindow):
     def update_history_actions(self):
         self.back_action.setEnabled(self.history.can_back)
         self.forward_action.setEnabled(self.history.can_forward)
+        self.history_button.setEnabled(self.history.can_back or self.history.can_forward)
+        self.back_menu.menuAction().setEnabled(self.history.can_back)
+        self.forward_menu.menuAction().setEnabled(self.history.can_forward)
         for menu, positions in (
             (
                 self.back_menu,
@@ -595,9 +601,31 @@ class MainWindow(WorkspaceUI, QMainWindow):
         self.translation_generation += 1
         self.selection_timer.stop()
         self.translation_pending = None
+        self.update_translation_status()
         if self.translation_processing:
             self.translation.setPlainText("双击单词或选中句子，选区稳定后自动翻译。")
             self.translation_processing = False
+
+    def update_translation_status(self, activity="", config=None):
+        config = self.settings.translation if config is None else config
+        provider = config.get("provider", "glossary")
+        label = PROVIDERS.get(provider, {}).get("label", provider)
+        model = config.get("model", "").strip()
+        if provider == "local":
+            model = "Argos 英中 / 中英"
+        parts = [label, model]
+        if not self.auto_translate.isChecked():
+            parts.append("即译已暂停")
+        if activity:
+            parts.append(activity)
+        self.translation_status.setText(" · ".join(part for part in parts if part))
+        self.translation_status.setToolTip(
+            "翻译服务："
+            + label
+            + ("\n模型：" + model if model else "")
+            + ("\n地址：" + config["endpoint"] if config.get("endpoint") else "")
+            + ("\n状态：" + activity if activity else "")
+        )
 
     def selection_changed(self):
         self.invalidate_translation()
@@ -618,6 +646,7 @@ class MainWindow(WorkspaceUI, QMainWindow):
         self.translation_pending = None
         self.translation_running = True
         self.translation_processing = True
+        self.update_translation_status("翻译中…", config)
         self.translation.setPlainText(text + "\n\n翻译中…")
         settings = self.settings
 
@@ -643,19 +672,13 @@ class MainWindow(WorkspaceUI, QMainWindow):
                 ]
                 if terms and len(text.split()) > 2:
                     output += "\n\nCATIA 术语\n" + "\n".join(terms)
-            provider_name = {
-                "local": "本机离线模型",
-                "libretranslate": "翻译服务",
-                "glossary": "术语辅助",
-                "chat-completions": "大模型翻译 API",
-            }.get(config.get("provider"), "翻译")
-            self.translation.setPlainText(
-                output + "\n\n" + provider_name + (" · 本地缓存" if result.cached else "")
-            )
+            self.translation.setPlainText(output)
+            self.update_translation_status("本地缓存" if result.cached else "已完成", config)
 
         def failed(message):
             if generation == self.translation_generation:
                 self.translation_processing = False
+                self.update_translation_status("翻译未完成", config)
                 self.translation.setPlainText(
                     text + "\n\n翻译未完成：" + message + "\n可在翻译设置中检查服务，或右键重试。"
                 )
@@ -707,6 +730,7 @@ class MainWindow(WorkspaceUI, QMainWindow):
         self.auto_translate.blockSignals(True)
         self.auto_translate.setChecked(settings.translation.get("automatic", True))
         self.auto_translate.blockSignals(False)
+        self.update_translation_status()
         self.tools_action.setChecked(settings.appearance.get("show_tools", True))
         if library_changed:
             self.navigation_generation += 1
@@ -766,8 +790,14 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path)
     parser.add_argument("--open", dest="open_target")
+    parser.add_argument("--diagnostics", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
-    return run(load_settings(args.config), args.open_target)
+    settings = load_settings(args.config)
+    if args.diagnostics:
+        from catia_manual.diagnostics import verify_runtime
+
+        return verify_runtime(settings, args.diagnostics)
+    return run(settings, args.open_target)
 
 
 if __name__ == "__main__":

@@ -1,0 +1,26 @@
+# Portable defaults only. Personal paths and credentials must never enter the release.
+[documentation]
+root = 'manuals/English'
+homepage = 'CATIA_P3_homepage.htm'
+database = 'data/manuals.sqlite3'
+
+[catia]
+launcher = 'catia/CATSTART.exe'
+environment = ''
+environment_dir = 'catia/CATEnv'
+
+[translation]
+provider = 'glossary'
+target_language = 'zh-CN'
+model_dir = 'data/models'
+automatic = true
+selection_delay_ms = 350
+max_selection_chars = 3000
+
+[appearance]
+font_size = 10
+reader_zoom = 100
+show_tools = true
+remember_window = true
+window_width = 1480
+window_height = 940

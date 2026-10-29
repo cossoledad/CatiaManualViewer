@@ -88,7 +88,11 @@ def translation_done():
     return (
         not window.translation_running
         and not window.selection_timer.isActive()
-        and ("本机离线模型" in window.translation.toPlainText())
+        and ("本机离线模型" in window.translation_status.text())
+        and (
+            "已完成" in window.translation_status.text()
+            or "本地缓存" in window.translation_status.text()
+        )
     )
 
 
