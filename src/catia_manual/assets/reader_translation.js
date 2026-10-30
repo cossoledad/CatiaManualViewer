@@ -5,6 +5,11 @@
   const nodes = [...document.querySelectorAll('.cmv-unit[data-unit]')];
   const byId = new Map(nodes.map(node => [node.dataset.unit, node]));
   let lastErrors = new Set();
+  let interactingUntil = 0;
+  const interacting = () => performance.now() < interactingUntil;
+  for (const name of ['wheel', 'pointerdown', 'keydown']) {
+    addEventListener(name, () => { interactingUntil = performance.now() + 250; }, {passive:true});
+  }
   function capture() {
     const node = nodes.find(node => {
       const rect = node.getBoundingClientRect();
@@ -28,6 +33,12 @@
       scrollTo(position.x || 0, position.y || 0);
     }
   }
+  let stable = capture();
+  addEventListener('scroll', () => { stable = capture(); }, {passive:true});
+  for (const image of document.images) image.addEventListener('load', () => {
+    if (!interacting()) restore(stable);
+    stable = capture();
+  });
   window.cmvReader = {key, capture, restore,
     visible() {
       return nodes.filter(node => {
@@ -54,7 +65,8 @@
         node.querySelector(':scope > .cmv-retry').title = error || '';
       }
       if (payload.errors) lastErrors = new Set(Object.keys(payload.errors));
-      restore(position);
+      if (payload.position || !interacting()) restore(position);
+      stable = capture();
       return true;
     }
   };

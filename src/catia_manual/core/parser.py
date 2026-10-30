@@ -9,6 +9,7 @@ from catia_manual.core.legacy import LegacyLinks
 from catia_manual.core.models import Block, Document, TocEntry
 from catia_manual.core.paths import resolve_link, within_root
 from catia_manual.core.reading import READING_CSS, ReadingPage, annotate
+from catia_manual.core.resources import IMAGE_EXTENSIONS
 
 BLOCK_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "td", "th", "pre", "dt", "dd"}
 PARSER_VERSION = "2"
@@ -140,7 +141,10 @@ class ManualParser:
             if match and (not href or href == "#" or href.lower().startswith("javascript:")):
                 tag["href"] = match.group(2)
             for attr in list(tag.attrs):
-                if attr.lower().startswith("on") or attr.lower() in {"srcdoc", "target"}:
+                if attr.lower().startswith(("on", "data-cmv-")) or attr.lower() in {
+                    "srcdoc",
+                    "target",
+                }:
                     del tag[attr]
             for attr in ("href", "src", "background", "poster"):
                 if attr not in tag.attrs:
@@ -153,6 +157,14 @@ class ManualParser:
 
                         uri += "#" + quote(link.fragment)
                     tag[attr] = uri
+                    if attr == "href" and tag.name == "a":
+                        tag["data-cmv-kind"] = (
+                            "image"
+                            if Path(link.target).suffix.lower() in IMAGE_EXTENSIONS
+                            else link.kind
+                        )
+                    if attr == "src" and tag.name == "img":
+                        tag["data-cmv-image"] = link.target
                 elif attr == "href" and tag.name == "a" and link.kind == "external":
                     tag[attr] = link.href
                 else:

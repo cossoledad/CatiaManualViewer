@@ -20,6 +20,8 @@ max_selection_chars = 3000
 [appearance]
 font_size = 10
 reader_zoom = 100
+reading_mode = 'original'
+sidebar_sizes = [275, 925, 280]
 show_tools = true
 remember_window = true
 window_width = 1480

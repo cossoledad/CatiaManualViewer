@@ -284,6 +284,7 @@ def cold_cache():
 
 
 def finish():
+    (project / "data").mkdir(parents=True, exist_ok=True)
     window.page_pump.stop()
     if window.page_task:
         window.page_task.paused = True

@@ -66,6 +66,8 @@ def verify_archive(archive: Path, version: str):
                     ".db",
                     ".log",
                     ".lnk",
+                    ".catvbs",
+                    ".catvba",
                     ".catpart",
                     ".catproduct",
                     ".catdrawing",
@@ -82,7 +84,7 @@ def verify_archive(archive: Path, version: str):
             "build-info.json",
             "dependencies.json",
             "catia_manual/assets/reader_translation.js",
-            "CATIA宏安装说明.txt",
+            "catia_manual/assets/reader_resources.js",
             "data/models/manifest.json",
         )
         for name in required:

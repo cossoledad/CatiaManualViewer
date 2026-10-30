@@ -16,13 +16,13 @@ MAX_MESSAGE = 16384
 
 
 def validate_request(value):
-    if not isinstance(value, dict) or set(value) - {"open", "workbench", "feature"}:
-        raise ValueError("无效的帮助请求")
-    for key, text in value.items():
-        if not isinstance(text, str) or len(text) > (4096 if key == "open" else 128):
-            raise ValueError("帮助请求过长或类型不正确")
+    if not isinstance(value, dict) or set(value) - {"open"}:
+        raise ValueError("无效的窗口激活请求")
+    for text in value.values():
+        if not isinstance(text, str) or len(text) > 4096:
+            raise ValueError("激活请求过长或类型不正确")
         if any(ord(c) < 32 for c in text):
-            raise ValueError("帮助请求包含控制字符")
+            raise ValueError("激活请求包含控制字符")
     return value
 
 
@@ -63,7 +63,7 @@ class InstanceBroker(QObject):
         client = QLocalSocket()
         client.connectToServer(self.name)
         if not client.waitForConnected(3000):
-            raise RuntimeError("查看器已在运行，但暂未响应帮助请求。")
+            raise RuntimeError("查看器已在运行，但暂未响应激活请求。")
         deadline = time.monotonic() + 3
         while not client.canReadLine():
             if time.monotonic() > deadline or not client.waitForReadyRead(1000):
@@ -81,9 +81,9 @@ class InstanceBroker(QObject):
         client.flush()
         client.waitForBytesWritten(1500)
         if not (client.bytesAvailable() or client.waitForReadyRead(4000)):
-            raise RuntimeError("现有查看器未接收帮助请求。")
+            raise RuntimeError("现有查看器未接收激活请求。")
         if bytes(client.readAll()) != b"ok\n":
-            raise RuntimeError("现有查看器未接收帮助请求。")
+            raise RuntimeError("现有查看器未接收激活请求。")
         client.disconnectFromServer()
         return False
 

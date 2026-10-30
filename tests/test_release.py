@@ -18,7 +18,7 @@ def make_archive(folder, **extra):
         "build-info.json": json.dumps({"version": info["version"], "offline_models": True}),
         "dependencies.json": "[]",
         "catia_manual/assets/reader_translation.js": "// fixture",
-        "CATIA宏安装说明.txt": "fixture",
+        "catia_manual/assets/reader_resources.js": "// fixture",
         "data/models/manifest.json": (release.PROJECT / "packaging/models.lock.json").read_bytes(),
     }
     for pair in ("en_zh", "zh_en"):
@@ -65,6 +65,7 @@ def test_archive_and_checksum_accept_only_clean_matching_bundle(tmp_path):
         "data/user.sqlite3",
         "online/manual.htm",
         "../escape.txt",
+        "integration/obsolete.catvbs",
     ],
 )
 def test_archive_rejects_private_data_and_unsafe_paths(tmp_path, name):

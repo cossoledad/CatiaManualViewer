@@ -14,6 +14,8 @@ INSTALLATION = Path(r"C:\UserApp\3D\DS\Dassault Systemes")
 APPEARANCE = {
     "font_size": 10,
     "reader_zoom": 100,
+    "reading_mode": "original",
+    "sidebar_sizes": [275, 925, 280],
     "show_tools": True,
     "remember_window": True,
     "window_width": 1480,

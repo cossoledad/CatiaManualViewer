@@ -3,10 +3,23 @@ import hashlib
 import json
 import sys
 from collections import OrderedDict
+from dataclasses import replace
 from pathlib import Path
 
-from PySide6.QtCore import QEvent, QObject, QRunnable, Qt, QThreadPool, QTimer, QUrl, Signal
-from PySide6.QtGui import QAction, QDesktopServices, QFont
+from PySide6.QtCore import (
+    QEvent,
+    QFile,
+    QIODevice,
+    QObject,
+    QRunnable,
+    Qt,
+    QThreadPool,
+    QTimer,
+    QUrl,
+    Signal,
+)
+from PySide6.QtGui import QColor, QDesktopServices, QFont
+from PySide6.QtWebChannel import QWebChannel
 from PySide6.QtWebEngineCore import (
     QWebEnginePage,
     QWebEngineProfile,
@@ -14,10 +27,8 @@ from PySide6.QtWebEngineCore import (
     QWebEngineSettings,
     QWebEngineUrlRequestInterceptor,
 )
-from PySide6.QtWebEngineWidgets import QWebEngineView
 from PySide6.QtWidgets import (
     QApplication,
-    QFileDialog,
     QListWidgetItem,
     QMainWindow,
     QMessageBox,
@@ -31,15 +42,17 @@ from catia_manual.core.navigation import Location, NavigationHistory
 from catia_manual.core.parser import ManualParser
 from catia_manual.core.paths import resolve_link
 from catia_manual.core.providers import PROVIDERS
+from catia_manual.core.reader_state import ReaderState
+from catia_manual.core.resources import IMAGE_EXTENSIONS
 from catia_manual.core.search import SearchService
 from catia_manual.core.translation import TranslationService, make_provider
 from catia_manual.gui.page_reader import PageReader
+from catia_manual.gui.resource_actions import ResourceActions, ResourceBridge
 from catia_manual.gui.settings import GlobalSettings
-from catia_manual.gui.style import APP_NAME, app_icon
+from catia_manual.gui.status import StatusCenter
+from catia_manual.gui.style import APP_NAME, ASSETS, app_icon
+from catia_manual.gui.widgets import ReaderView
 from catia_manual.gui.workspace import WorkspaceUI
-from catia_manual.integrations.catia import CatiaLauncher
-from catia_manual.integrations.help_macro import export_help_macros, resolve_help_context
-from catia_manual.runtime import application_directory, is_compiled
 
 
 class JobSignals(QObject):
@@ -98,10 +111,16 @@ class ReaderPage(QWebEnginePage):
         return True
 
 
-class MainWindow(PageReader, WorkspaceUI, QMainWindow):
+class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
     def __init__(self, settings: Settings, initial_target: str | None = None):
         super().__init__()
         self.settings = settings
+        self.setStatusBar(StatusCenter(self))
+        self.reading_state = ReaderState.from_settings(settings.appearance)
+        self.preference_changes = {}
+        self.preference_timer = QTimer(self)
+        self.preference_timer.setSingleShot(True)
+        self.preference_timer.timeout.connect(self.flush_preferences)
         self.parser = ManualParser(settings.root)
         self.render_cache = settings.database.parent / "rendered"
         self.render_cache.mkdir(parents=True, exist_ok=True)
@@ -114,6 +133,8 @@ class MainWindow(PageReader, WorkspaceUI, QMainWindow):
         self.expected_render = None
         self.requested_history_position = None
         self.jobs: set[Job] = set()
+        self.index_running = False
+        self.init_resources()
         self.search_generation = 0
         self.translation_generation = 0
         self.translation_running = False
@@ -124,6 +145,7 @@ class MainWindow(PageReader, WorkspaceUI, QMainWindow):
         self.selection_timer.timeout.connect(self.translate_selection)
         self.init_page_reader()
         self.build_interface()
+        self.refresh_capabilities(probe=True)
         self.update_history_actions()
         if initial_target:
             QTimer.singleShot(0, lambda: self.open_target(initial_target))
@@ -136,9 +158,25 @@ class MainWindow(PageReader, WorkspaceUI, QMainWindow):
         self.profile = QWebEngineProfile(self)
         self.interceptor = LocalRequests([self.settings.root, self.render_cache], self.profile)
         self.profile.setUrlRequestInterceptor(self.interceptor)
-        web = QWebEngineView()
+        web = ReaderView()
         self.reader_page = ReaderPage(self.profile, web)
+        self.resource_channel = QWebChannel(self.reader_page)
+        self.resource_bridge = ResourceBridge(self.reader_page)
+        self.resource_bridge.requested.connect(self.resource_request)
+        self.resource_channel.registerObject("resources", self.resource_bridge)
+        self.reader_page.setWebChannel(
+            self.resource_channel, QWebEngineScript.ScriptWorldId.ApplicationWorld.value
+        )
+        channel_script = QFile(":/qtwebchannel/qwebchannel.js")
+        if not channel_script.open(QIODevice.OpenModeFlag.ReadOnly):
+            raise RuntimeError("无法加载资源交互桥")
+        self.resource_script = (
+            bytes(channel_script.readAll()).decode("utf-8")
+            + "\n"
+            + (ASSETS / "reader_resources.js").read_text("utf-8")
+        )
         web.setPage(self.reader_page)
+        self.reader_page.setBackgroundColor(QColor("white"))
         self.reader_page.settings().setAttribute(
             QWebEngineSettings.WebAttribute.JavascriptEnabled, False
         )
@@ -170,8 +208,22 @@ class MainWindow(PageReader, WorkspaceUI, QMainWindow):
         QThreadPool.globalInstance().start(job)
 
     def show_error(self, message):
-        self.statusBar().showMessage(message)
-        QMessageBox.warning(self, "操作未完成", message)
+        self.statusBar().publish("error", message, priority=100, timeout=12000, record=True)
+
+    def remember_preferences(self, changes):
+        self.settings = replace(self.settings, appearance={**self.settings.appearance, **changes})
+        self.preference_changes.update(changes)
+        self.preference_timer.start(400)
+
+    def flush_preferences(self):
+        self.preference_timer.stop()
+        if self.preference_changes:
+            changes = dict(self.preference_changes)
+            self.preference_changes.clear()
+            try:
+                self.settings = save_settings(self.settings, {"appearance": changes})
+            except OSError as exc:
+                self.show_error(f"本次偏好已应用，保存失败：{exc}")
 
     def expand_module(self, item):
         data = item.data(0, Qt.ItemDataRole.UserRole)
@@ -230,7 +282,9 @@ class MainWindow(PageReader, WorkspaceUI, QMainWindow):
         self.expected_render = None
         self.requested_history_position = history_index
         self.invalidate_translation()
-        self.statusBar().showMessage("正在加载文档…")
+        if self.center_stack.currentWidget() == self.web:
+            self.web.begin_navigation()
+        self.statusBar().publish("navigation", "正在加载文档…", priority=40, timeout=0)
 
         def prepare(_):
             source = parser.source(relative)
@@ -290,7 +344,6 @@ class MainWindow(PageReader, WorkspaceUI, QMainWindow):
                 and self.current_document.content_hash == document.content_hash
             )
             self.current_document = document
-            self.center_stack.setCurrentWidget(self.web)
             self.details_pane.setVisible(self.settings.appearance.get("show_tools", True))
             self.requested_history_position = None
             self.expected_render = cached.resolve()
@@ -316,9 +369,12 @@ class MainWindow(PageReader, WorkspaceUI, QMainWindow):
                 item.setData(Qt.ItemDataRole.UserRole, link.target)
                 item.setToolTip(link.target)
                 self.samples.addItem(item)
-            self.sample_group.setVisible(self.samples.count() > 0)
+            self.sample_info.setText(
+                "双击打开 · 右键定位" if self.samples.count() else "本页暂无示例文件"
+            )
             self.update_history_actions()
             if same_page:
+                self.web.reveal()
                 if self.pending_restore is not None:
                     self.restore_scroll(*self.pending_restore)
                 else:
@@ -326,18 +382,20 @@ class MainWindow(PageReader, WorkspaceUI, QMainWindow):
                 self.pending_restore = None
                 self.page_loading = False
                 self.attach_reading_page(self.pending_reading_restore, fragment)
-                self.statusBar().clearMessage()
+                self.statusBar().clear_source("navigation")
                 return
             base = QUrl.fromLocalFile(str(cached))
             if fragment:
                 base.setFragment(fragment)
+            self.web.begin_navigation()
             self.web.load(base)
-            self.statusBar().clearMessage()
 
         def failed(message):
             if generation == self.navigation_generation:
                 self.page_loading = False
                 self.requested_history_position = None
+                self.statusBar().clear_source("navigation")
+                self.web.reveal()
                 self.show_error(message)
 
         self.submit(prepare, prepared, error=failed)
@@ -373,13 +431,27 @@ class MainWindow(PageReader, WorkspaceUI, QMainWindow):
             return
         if not ok:
             self.page_loading = False
-            self.statusBar().showMessage("页面加载失败")
+            self.web.reveal()
+            self.statusBar().clear_source("navigation")
+            self.show_error("页面加载失败")
             return
         if self.pending_restore is not None:
             self.restore_scroll(*self.pending_restore)
             self.pending_restore = None
         self.page_loading = False
+        self.application_script(self.resource_script)
         self.attach_reading_page(self.pending_reading_restore, self.reading_fragment)
+
+    def reveal_reading_page(self):
+        generation = self.navigation_generation
+
+        def reveal():
+            if generation == self.navigation_generation and self.page_ready:
+                self.center_stack.setCurrentWidget(self.web)
+                self.web.reveal()
+                self.statusBar().clear_source("navigation")
+
+        QTimer.singleShot(40, reveal)
 
     def scroll_changed(self, position):
         if not self.page_loading and self.center_stack.currentWidget() == self.web:
@@ -403,7 +475,9 @@ class MainWindow(PageReader, WorkspaceUI, QMainWindow):
         if link.kind == "document" and link.target:
             self.open_document(link.target, link.fragment)
         elif link.kind == "sample" and link.target:
-            self.launch_sample(link.target)
+            self.statusBar().publish("resource", link.target + " · 双击打开，右键定位")
+        elif link.target and Path(link.target).suffix.lower() in IMAGE_EXTENSIONS:
+            self.preview_image(link.target)
         elif link.kind == "external":
             QDesktopServices.openUrl(QUrl(link.href))
         elif (
@@ -424,49 +498,12 @@ class MainWindow(PageReader, WorkspaceUI, QMainWindow):
         else:
             self.show_error("无法映射到本机 CATIA 文档：" + target)
 
-    def handle_help_request(self, request):
+    def activate_request(self, request):
         self.showNormal()
         self.raise_()
         self.activateWindow()
-        if not request:
-            return
         if request.get("open"):
             self.open_target(request["open"])
-            return
-        target = resolve_help_context(
-            self.settings.root,
-            self.catalog,
-            request.get("workbench", ""),
-            request.get("feature", ""),
-        )
-        if target.get("open"):
-            self.open_target(target["open"])
-        elif target.get("manual") and not target.get("search"):
-            self.open_manual(target["manual"])
-        elif target.get("search"):
-            self.set_scope("manual" if target.get("manual") else "all", target.get("manual"))
-            self.query.setText(target["search"])
-            self.search()
-        else:
-            self.show_home()
-
-    def export_catia_macros(self):
-        if not is_compiled():
-            self.statusBar().showMessage("请在便携版中导出宏，以绑定实际的 EXE 路径。", 5000)
-            return
-        selected = QFileDialog.getExistingDirectory(
-            self, "导出 CATIA 帮助宏", str(application_directory())
-        )
-        if selected:
-            try:
-                export_help_macros(
-                    application_directory() / "CatiaManualViewer.exe", Path(selected)
-                )
-                self.statusBar().showMessage(
-                    "已导出 3 个帮助宏；在 CATIA 中添加宏库后可拖入工具栏。", 8000
-                )
-            except OSError as exc:
-                self.show_error(str(exc))
 
     def go_back(self):
         position = self.requested_history_position
@@ -548,7 +585,7 @@ class MainWindow(PageReader, WorkspaceUI, QMainWindow):
         scope_label = self.module.currentText().strip()
         self.search_generation += 1
         generation = self.search_generation
-        self.statusBar().showMessage("搜索中…")
+        self.statusBar().publish("search", "搜索中…", priority=30, timeout=0)
 
         def work(_):
             with ManualIndex(settings.database, settings.root) as index:
@@ -577,22 +614,28 @@ class MainWindow(PageReader, WorkspaceUI, QMainWindow):
                 item = QListWidgetItem("建立搜索索引")
                 item.setData(Qt.ItemDataRole.UserRole, "@index")
                 self.results.addItem(item)
-                self.statusBar().showMessage("此文档尚未建立索引")
+                self.statusBar().publish("search", "此文档尚未建立索引", record=True)
                 return
             summary = f"{scope_label} · {len(response.hits)} 个结果"
             self.query.setToolTip(response.plan.expanded)
             if response.plan.unknown:
                 summary += " · " + "；".join(response.plan.notes)
-            self.statusBar().showMessage(summary)
+            self.statusBar().publish("search", summary, record=True)
 
-        self.submit(work, done)
+        def failed(message):
+            if generation == self.search_generation:
+                self.statusBar().clear_source("search")
+                self.show_error(message)
+
+        self.submit(work, done, error=failed)
 
     def build_index(self):
         if not self.build_button.isEnabled():
             return
+        self.index_running = True
         self.build_button.setEnabled(False)
         settings = self.settings
-        self.statusBar().showMessage("正在扫描文档并建立索引…")
+        self.statusBar().publish("index", "正在扫描文档并建立索引…", priority=10, timeout=0)
 
         def work(progress):
             with ManualIndex(settings.database, settings.root) as index:
@@ -601,48 +644,56 @@ class MainWindow(PageReader, WorkspaceUI, QMainWindow):
         def done(report):
             if settings.root != self.settings.root or settings.database != self.settings.database:
                 return
-            self.statusBar().showMessage(
+            self.statusBar().publish(
+                "index",
                 f"索引完成：更新 {report['updated']}，未变化 {report['unchanged']}，"
-                f"错误 {len(report['errors'])}"
+                f"错误 {len(report['errors'])}",
+                priority=10,
+                record=True,
             )
             if report["errors"]:
                 self.show_error(json.dumps(report["errors"][:5], ensure_ascii=False, indent=2))
             elif self.query.text().strip():
                 self.search()
 
+        def finished():
+            self.index_running = False
+            if settings.root != self.settings.root or settings.database != self.settings.database:
+                self.statusBar().clear_source("index")
+            self.refresh_capabilities()
+
+        def failed(message):
+            self.statusBar().clear_source("index")
+            self.show_error(message)
+
         self.submit(
             work,
             done,
-            progress=lambda p: self.statusBar().showMessage(
-                f"索引中 {p['processed']} / {p['total']}"
+            progress=lambda p: (
+                self.statusBar().publish(
+                    "index",
+                    f"索引中 {p['processed']} / {p['total']}",
+                    priority=10,
+                    timeout=0,
+                )
+                if settings.root == self.settings.root
+                and settings.database == self.settings.database
+                else None
             ),
-            finished=lambda: self.build_button.setEnabled(True),
+            finished=finished,
+            error=failed,
         )
-
-    def open_sample(self, item):
-        self.launch_sample(item.data(Qt.ItemDataRole.UserRole))
-
-    def launch_sample(self, relative):
-        self.statusBar().showMessage("正在交给 CATIA 打开示例…")
-        settings = self.settings
-        self.submit(
-            lambda _: CatiaLauncher(settings).open(relative),
-            lambda result: self.statusBar().showMessage(
-                f"已提交给 CATIA（{result['method']}）：{result['path']}"
-            ),
-        )
-
-    def context_menu(self, position):
-        menu = self.web.createStandardContextMenu()
-        action = QAction("翻译选中文字", menu)
-        action.setEnabled(bool(self.web.selectedText().strip()))
-        action.triggered.connect(self.translate_selection)
-        menu.addAction(action)
-        menu.exec(self.web.mapToGlobal(position))
 
     def translate_selection(self):
         text = self.web.selectedText().strip()
         if not text or self.page_loading or self.center_stack.currentWidget() != self.web:
+            return
+        self.refresh_capabilities()
+        if not self.capabilities.selection_translation.available:
+            self.translation.setPlainText(
+                text + "\n\n" + self.capabilities.selection_translation.reason
+            )
+            self.update_translation_status("未配置可用服务")
             return
         maximum = int(self.settings.translation.get("max_selection_chars", 3000))
         if len(text) > maximum:
@@ -765,13 +816,13 @@ class MainWindow(PageReader, WorkspaceUI, QMainWindow):
         self.configure_settings(tab=1)
 
     def configure_settings(self, checked=False, tab=0):
+        self.flush_preferences()
         dialog = GlobalSettings(self.settings, self)
         dialog.tabs.setCurrentIndex(tab)
         if dialog.exec() != GlobalSettings.DialogCode.Accepted:
             return
         try:
             changes = dialog.changes()
-            make_provider({**self.settings.translation, **changes["translation"]})
             updated = save_settings(self.settings, changes)
             dialog.translation.apply_session_key()
             self.apply_settings(updated)
@@ -786,6 +837,10 @@ class MainWindow(PageReader, WorkspaceUI, QMainWindow):
         self.invalidate_translation()
         self.search_generation += 1
         self.settings = settings
+        self.statusBar().clear_source("search")
+        self.reading_state = ReaderState.from_settings(settings.appearance)
+        self.resources = type(self.resources)(settings.root)
+        self.refresh_capabilities(probe=True)
         QApplication.instance().setFont(
             QFont("Microsoft YaHei UI", int(settings.appearance.get("font_size", 10)))
         )
@@ -809,10 +864,7 @@ class MainWindow(PageReader, WorkspaceUI, QMainWindow):
             self.translation.clear()
             self.show_home()
         else:
-            self.details_pane.setVisible(
-                settings.appearance.get("show_tools", True)
-                and self.center_stack.currentWidget() == self.web
-            )
+            self.details_pane.setVisible(settings.appearance.get("show_tools", True))
             self.selection_changed()
             self.attach_reading_page()
         self.statusBar().showMessage("设置已保存", 2000)
@@ -825,6 +877,9 @@ class MainWindow(PageReader, WorkspaceUI, QMainWindow):
             self.statusBar().showMessage("后台任务仍在运行，完成后可关闭窗口")
             event.ignore()
             return
+        self.flush_preferences()
+        for preview in list(self.image_windows):
+            preview.close()
         if self.settings.appearance.get("remember_window", True):
             try:
                 self.settings = save_settings(
@@ -839,7 +894,7 @@ class MainWindow(PageReader, WorkspaceUI, QMainWindow):
         event.accept()
 
 
-def run(settings: Settings, initial_target: str | None = None, help_context=None) -> int:
+def run(settings: Settings, initial_target: str | None = None) -> int:
     if sys.platform == "win32":
         import ctypes
 
@@ -851,7 +906,7 @@ def run(settings: Settings, initial_target: str | None = None, help_context=None
     from catia_manual.gui.single_instance import InstanceBroker
 
     broker = InstanceBroker(settings, app)
-    request = {"open": initial_target} if initial_target else (help_context or {})
+    request = {"open": initial_target} if initial_target else {}
     try:
         if not broker.take_or_forward(request):
             return 0
@@ -859,11 +914,9 @@ def run(settings: Settings, initial_target: str | None = None, help_context=None
         QMessageBox.warning(None, APP_NAME, str(exc))
         return 1
     window = MainWindow(settings, initial_target)
-    broker.request.connect(window.handle_help_request)
+    broker.request.connect(window.activate_request)
     app.aboutToQuit.connect(broker.close)
     window.show()
-    if help_context:
-        QTimer.singleShot(0, lambda: window.handle_help_request(help_context))
     return app.exec()
 
 
@@ -871,8 +924,6 @@ def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path)
     parser.add_argument("--open", dest="open_target")
-    parser.add_argument("--help-workbench", default="")
-    parser.add_argument("--help-feature", default="")
     parser.add_argument("--diagnostics", type=Path, help=argparse.SUPPRESS)
     args = parser.parse_args()
     settings = load_settings(args.config)
@@ -880,12 +931,7 @@ def main() -> int:
         from catia_manual.diagnostics import verify_runtime
 
         return verify_runtime(settings, args.diagnostics)
-    context = (
-        {"workbench": args.help_workbench, "feature": args.help_feature}
-        if args.help_workbench or args.help_feature
-        else None
-    )
-    return run(settings, args.open_target, context)
+    return run(settings, args.open_target)
 
 
 if __name__ == "__main__":

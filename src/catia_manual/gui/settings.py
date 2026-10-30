@@ -205,12 +205,17 @@ class GlobalSettings(QDialog):
         self.model_dir = self.path_field(
             form, "离线模型目录", settings.translation.get("model_dir", "data/models")
         )
-        self.launcher = self.path_field(form, "CATIA 启动器", str(settings.launcher), file=True)
+        from PySide6.QtWidgets import QGroupBox
+
+        catia = QGroupBox("CATIA（可选，仅用于打开示例）")
+        catia_form = QFormLayout(catia)
+        self.launcher = self.path_field(catia_form, "启动器", str(settings.launcher), file=True)
         self.environment_dir = self.path_field(
-            form, "CATIA 环境目录", str(settings.environment_dir)
+            catia_form, "环境目录", str(settings.environment_dir)
         )
         self.environment = QLineEdit(settings.environment)
-        form.addRow("CATIA 环境名称", self.environment)
+        catia_form.addRow("环境名称", self.environment)
+        form.addRow(catia)
         hint = QLabel("文档目录应包含 online 文件夹。仅阅读文档时无需安装 CATIA。")
         hint.setWordWrap(True)
         hint.setObjectName("muted")
@@ -231,6 +236,13 @@ class GlobalSettings(QDialog):
         self.zoom.setSuffix(" %")
         self.zoom.setValue(int(settings.appearance.get("reader_zoom", 100)))
         visual.addRow("阅读缩放", self.zoom)
+        self.reading_mode = QComboBox()
+        for label, value in (("原文", "original"), ("双语", "bilingual"), ("中文", "chinese")):
+            self.reading_mode.addItem(label, value)
+        self.reading_mode.setCurrentIndex(
+            max(0, self.reading_mode.findData(settings.appearance.get("reading_mode", "original")))
+        )
+        visual.addRow("阅读模式（跨页保留）", self.reading_mode)
         self.tools = QCheckBox("显示翻译与示例侧栏")
         self.tools.setChecked(settings.appearance.get("show_tools", True))
         visual.addRow(self.tools)
@@ -297,6 +309,7 @@ class GlobalSettings(QDialog):
             "appearance": {
                 "font_size": self.font_size.value(),
                 "reader_zoom": self.zoom.value(),
+                "reading_mode": self.reading_mode.currentData(),
                 "show_tools": self.tools.isChecked(),
                 "remember_window": self.remember_window.isChecked(),
             },

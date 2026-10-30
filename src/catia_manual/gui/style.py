@@ -90,6 +90,10 @@ QScrollArea>QWidget>QWidget {background:transparent;}
 QSplitter::handle {background:#edf2f6;width:8px;}
 QStatusBar {background:#f3f6fa;color:#7b8b99;font-size:11px;}
 QLabel#translationStatus {color:#667e8d;padding:3px 12px;}
+QToolButton {min-height:22px;}
+QToolButton:focus {border:1px solid #579b9b;padding:6px;}
+QGroupBox {border:1px solid #dce5ed;border-radius:7px;margin-top:12px;padding:14px 8px 8px;}
+QGroupBox::title {subcontrol-origin:margin;left:10px;padding:0 5px;color:#667e8d;}
 QStatusBar::item {border:0;}
 QMenu {background:white;border:1px solid #dce5ed;padding:5px;}
 QMenu::item {padding:8px 24px;border-radius:4px;}

@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 from catia_manual.core.catalog import ManualCatalog
 from catia_manual.core.navigation import Location
 from catia_manual.gui.style import APP_NAME, STYLESHEET, app_icon, icon
+from catia_manual.gui.widgets import ElidedLabel
 
 
 class CatalogCard(QFrame):
@@ -123,9 +124,6 @@ class WorkspaceUI:
         self.tools_action.setChecked(self.settings.appearance.get("show_tools", True))
         self.tools_action.triggered.connect(self.toggle_tools)
         menu.addAction(self.tools_action)
-        menu.addSeparator()
-        macro_action = menu.addAction("导出 CATIA 帮助宏…")
-        macro_action.triggered.connect(self.export_catia_macros)
         self.settings_button = QToolButton()
         self.settings_button.setDefaultAction(self.settings_action)
         self.settings_button.setToolTip("设置 · Ctrl+,")
@@ -193,7 +191,7 @@ class WorkspaceUI:
             )
         )
         nav.addWidget(self.history_button)
-        self.page_title = QLabel("功能首页")
+        self.page_title = ElidedLabel("功能首页")
         self.page_title.setObjectName("muted")
         self.page_title.setMinimumWidth(0)
         nav.addSpacing(8)
@@ -222,8 +220,28 @@ class WorkspaceUI:
         samples_layout.addWidget(QLabel("示例文件"))
         self.samples = QListWidget()
         self.samples.setMaximumHeight(190)
-        self.samples.itemClicked.connect(self.open_sample)
+        self.samples.itemClicked.connect(self.selected_sample)
+        self.samples.itemDoubleClicked.connect(self.open_sample)
+        self.samples.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.samples.customContextMenuRequested.connect(self.sample_context_menu)
+        for shortcut in ("Return", "Enter"):
+            action = QAction(self.samples)
+            action.setShortcut(QKeySequence(shortcut))
+            action.setShortcutContext(Qt.ShortcutContext.WidgetShortcut)
+            action.triggered.connect(
+                lambda: (
+                    self.open_sample(self.samples.currentItem())
+                    if self.samples.currentItem()
+                    else None
+                )
+            )
+            self.samples.addAction(action)
         samples_layout.addWidget(self.samples)
+        self.sample_info = QLabel("选择文章查看资源")
+        self.sample_info.setObjectName("muted")
+        samples_layout.addWidget(self.sample_info)
+        self.sample_group.setMinimumHeight(170)
+        self.sample_group.setMaximumHeight(220)
         details.addWidget(self.sample_group)
         translation_header = QHBoxLayout()
         translation_header.addWidget(QLabel("翻译"))
@@ -237,18 +255,33 @@ class WorkspaceUI:
         self.translation.setPlaceholderText("选中文字查看翻译")
         details.addWidget(self.translation, 1)
         self.split.addWidget(self.details_pane)
-        self.split.setSizes([275, 925, 280])
+        sizes = self.settings.appearance.get("sidebar_sizes", [275, 925, 280])
+        if (
+            not isinstance(sizes, list)
+            or len(sizes) != 3
+            or any(not isinstance(n, int) or n < 0 for n in sizes)
+        ):
+            sizes = [275, 925, 280]
+        self.split.setSizes(sizes)
+        self.split.splitterMoved.connect(
+            lambda *_: self.remember_preferences({"sidebar_sizes": self.split.sizes()})
+        )
         self.split.setCollapsible(0, False)
         self.split.setCollapsible(1, False)
         layout.addWidget(self.split, 1)
         self.setCentralWidget(container)
-        self.translation_status = QLabel()
+        self.translation_status = ElidedLabel()
         self.translation_status.setObjectName("translationStatus")
         self.translation_status.setTextFormat(Qt.TextFormat.PlainText)
-        self.translation_status.setMaximumWidth(480)
+        self.translation_status.setMaximumWidth(290)
+        self.translation_status.setMinimumWidth(0)
         self.statusBar().addPermanentWidget(self.translation_status)
         self.update_translation_status()
         self.web.setZoomFactor(self.settings.appearance.get("reader_zoom", 100) / 100)
+        focus_search = QAction(self)
+        focus_search.setShortcut(QKeySequence("Ctrl+K"))
+        focus_search.triggered.connect(lambda: (self.query.setFocus(), self.query.selectAll()))
+        self.addAction(focus_search)
         self.reload_catalog()
 
     def reload_catalog(self):
@@ -318,7 +351,11 @@ class WorkspaceUI:
         self.requested_history_position = None
         self.invalidate_translation()
         self.center_stack.setCurrentWidget(self.home_scroll)
-        self.details_pane.hide()
+        self.web.reveal()
+        self.details_pane.setVisible(self.settings.appearance.get("show_tools", True))
+        self.samples.clear()
+        self.sample_info.setText("选择文章查看资源")
+        self.translation.clear()
         while self.home_layout.count():
             item = self.home_layout.takeAt(0)
             if item.widget():
@@ -385,7 +422,7 @@ class WorkspaceUI:
             )
             self.home_scroll.verticalScrollBar().setValue(0)
         self.update_history_actions()
-        self.statusBar().clearMessage()
+        self.statusBar().clear_source("navigation")
 
     def open_manual(self, identity):
         manual = self.catalog.manuals[identity]
@@ -398,7 +435,6 @@ class WorkspaceUI:
         self.open_document(manual.entry)
 
     def toggle_tools(self, enabled):
-        from catia_manual.config import save_settings
 
-        self.settings = save_settings(self.settings, {"appearance": {"show_tools": enabled}})
-        self.details_pane.setVisible(enabled and self.center_stack.currentWidget() == self.web)
+        self.remember_preferences({"show_tools": enabled})
+        self.details_pane.setVisible(enabled)

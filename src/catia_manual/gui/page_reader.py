@@ -5,13 +5,14 @@ import json
 from collections import OrderedDict
 
 from PySide6.QtCore import QTimer
-from PySide6.QtWidgets import QButtonGroup, QHBoxLayout, QLabel, QToolButton, QWidget
+from PySide6.QtWidgets import QButtonGroup, QHBoxLayout, QToolButton, QWidget
 
 from catia_manual.core.index import ManualIndex
 from catia_manual.core.page_translation import PageTranslationService, PageTranslationTask
 from catia_manual.core.providers import PROVIDERS
 from catia_manual.core.translation import make_provider
 from catia_manual.gui.style import ASSETS
+from catia_manual.gui.widgets import ElidedLabel
 
 READER_SCRIPT = (ASSETS / "reader_translation.js").read_text("utf-8")
 
@@ -56,9 +57,11 @@ class PageReader:
         self.retry_page_button.clicked.connect(lambda: self.retry_page_translation())
         row.addWidget(self.retry_page_button)
         nav.addWidget(self.reading_controls)
-        self.reading_controls.hide()
-        self.page_progress = QLabel()
-        self.page_progress.setMaximumWidth(350)
+        self.reading_controls.setEnabled(False)
+        self.mode_buttons[self.reading_state.mode].setChecked(True)
+        self.page_progress = ElidedLabel()
+        self.page_progress.setMaximumWidth(240)
+        self.page_progress.setMinimumWidth(0)
         self.statusBar().addPermanentWidget(self.page_progress)
 
     def detach_reading_page(self):
@@ -66,7 +69,7 @@ class PageReader:
         self.page_pump.stop()
         self.page_task = None
         self.page_ready = False
-        self.reading_controls.hide()
+        self.reading_controls.setEnabled(False)
         self.page_progress.clear()
 
     def capture_reading_position(self):
@@ -106,9 +109,10 @@ class PageReader:
         while len(self.page_sessions) > 20:
             self.page_sessions.popitem(last=False)
         self.page_task = task
+        task.mode = self.reading_state.mode
         self.page_ready = False
         self.page_service_error = ""
-        self.reading_controls.show()
+        self.reading_controls.setEnabled(True)
         provider_label = PROVIDERS.get(config.get("provider"), {}).get("label", "翻译服务")
         characters = sum(len(unit.text) for unit in page.units)
         for mode in ("bilingual", "chinese"):
@@ -171,10 +175,13 @@ class PageReader:
             + json.dumps(task.page.key)
             + ","
             + json.dumps(payload)
-            + ")"
+            + ")",
+            lambda _: self.reveal_reading_page(),
         )
 
     def set_reading_mode(self, mode):
+        self.reading_state.select(mode)
+        self.remember_preferences({"reading_mode": mode})
         if not self.page_task:
             return
         self.page_task.mode = mode
@@ -210,10 +217,10 @@ class PageReader:
         self.mode_buttons[task.mode].setChecked(True)
         active = task.mode != "original"
         pending = len(task.results) + len(task.errors) < len(task.page.units)
-        self.pause_page_button.setVisible(active and pending and not self.page_service_error)
+        self.pause_page_button.setEnabled(active and pending and not self.page_service_error)
         self.pause_page_button.setText("继续" if task.paused else "暂停")
         self.pause_page_button.setToolTip("暂停后不再发送新段落，正在处理的段落仍会缓存")
-        self.retry_page_button.setVisible(active and bool(task.errors or self.page_service_error))
+        self.retry_page_button.setEnabled(active and bool(task.errors or self.page_service_error))
         if not active:
             self.page_progress.clear()
             return
@@ -245,6 +252,11 @@ class PageReader:
         ):
             return
         if not task.next_unit():
+            self.update_page_controls()
+            return
+        self.refresh_capabilities()
+        if not self.capabilities.page_translation.available:
+            self.page_service_error = self.capabilities.page_translation.reason
             self.update_page_controls()
             return
 

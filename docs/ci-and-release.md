@@ -47,12 +47,12 @@ python scripts/setup_translation.py --model-dir .cache/offline-models --lock pac
 
 首个 Release 包含：
 
-- `CatiaManualViewer-0.5.0-windows-x64-portable.zip`：完整便携目录、QtWebEngine、离线模型、依赖许可证和宏安装说明。
+- `CatiaManualViewer-0.5.0-windows-x64-portable.zip`：完整便携目录、QtWebEngine、离线模型、依赖许可证和使用说明。
 - 同名 `.zip.sha256`：标准 SHA-256 校验文件。
 
 使用者解压整个 ZIP 后运行 `CatiaManualViewer.exe`。包内不包含原版手册、CATIA 程序、个人配置、索引或密钥。CI 传入 `--skip-runtime-check`，编译后直接打包；制品检查验证 ZIP 路径、版本、模型 manifest、默认相对路径及敏感文件。发布任务下载 Actions 制品后重新校验 ZIP 和 SHA-256。
 
-编译报告单独留在 Actions 的 `nuitka-diagnostics-*` 制品中。本地直接使用构建脚本时仍默认执行 EXE 运行时自检。完整 CATIA 宏、真实手册、远程翻译 API 和独立电脑的交互验收使用本机验证流程。
+编译报告单独留在 Actions 的 `nuitka-diagnostics-*` 制品中。本地直接使用构建脚本时仍默认执行 EXE 运行时自检。真实手册、示例打开、远程翻译 API 和独立电脑的交互验收使用本机验证流程。
 
 ## 发布与重跑
 

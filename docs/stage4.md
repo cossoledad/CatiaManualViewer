@@ -61,35 +61,9 @@
 
 下一轮验收重点：含链接的长段落、嵌套列表、表格、重复内容、超长 API 页面、滚动中插入译文、切换服务时过期返回、返回上一页、部分限流失败、完全离线复用缓存，以及复制文本时不会同时复制隐藏的另一语言。先完成双语，再实现中文替换；两者共享任务与缓存。
 
-## CATIA → 查看器：本机证据
+## 当前集成边界
 
-以下资料均来自本机 V5-6R2023 B33 文档，可直接在查看器中阅读相对路径。
-
-| 官方文档 | 已确认的事实 |
-| --- | --- |
-| `online/basug_C2/basugbt0204.htm`，Getting Contextual Help | F1 / Help > CATIA V5 Help 按当前命令打开相应 HTML；仍在运行的某些非当前命令可能有优先级 |
-| `online/basug_C2/basugbt0203.htm`，Accessing the Online Help Library | CATDocView 和 General > Help 的 Location 指向文档位置；要求实际有效位置；Windows 也支持 UNC |
-| `online/basil_C2/basilInstallDoc.htm`，Installing the Online Documentation | 文档可以部署在 HTTP 服务器；这一点不等于可把 EXE 直接填进文档路径 |
-| `online/interfaces/InfInterfaces/interface_DocumentationSettingAtt_38404.htm` | Automation 暴露 TechnicalDocumentationPath、DocLanguage、CompanionPath、Priority 及相关设置方法；未发现任意帮助处理器或回调注册属性 |
-| `online/interfaces/InfInterfaces/enum_CATDocContextualPriority_38535.htm` | Priority 只在 Technical Documentation 与 User Companion 之间选择，不能据此推断可以设置外部帮助 EXE |
-| `online/basug_C2/basugbt1903.htm`，Running Macros | Tools > Customize > Commands > Macros 可以将宏拖到工具栏，提供明确、可点击的入口 |
-
-`CATIA_P3_OpenPageFind.htm` 是旧 Java 搜索 applet 包装页，名称本身不能证明它是 F1 的公开 hook。当前已实现的 `--open` 是查看器接收本地文档目标的能力，不代表已经接管 CATIA 的帮助分发。本轮没有更改 CATDocView、注册表、默认浏览器、CATIA 工具栏或安装目录。
-
-## 可行路线与建议顺序（均待实现）
-
-| 路线 | 可达效果 | 主要限制 | 建议 |
-| --- | --- | --- | --- |
-| 自定义帮助宏 / 工具栏按钮 | 点击按钮启动便携 EXE，传入已知主题或工作台入口 | 一般宏没有现成、已验证的“当前命令帮助 ID”回调；固定主题容易，通用上下文需另查 API | 先做低成本验证 |
-| 本机文档代理 / URL 桥接 | CATIA 继续解析命令上下文，将最终 topic URL 转交查看器 | B33 在 Windows 上是否允许指向本机 HTTP 根目录、实际 F1 URL 形态、是否仍强制先开浏览器，都需实测；HTTP 可部署不等于已确认可接管 | 优先研究真正 F1 保真方案 |
-| CAA RADE 原生命令 / Add-in | 按公开的命令框架实现帮助按钮，控制主题和上下文 | 需要相应 SDK、许可、B33 ABI 和部署环境；不能假设 Automation 等同于 CAA | 宏无法满足上下文时再评估 |
-| 改默认浏览器 / HTML 文件关联 / 全局按键拦截 | 可能截获部分打开行为 | 影响其他应用，容易依赖窗口焦点、语言和版本；不能保证拿到准确命令上下文 | 不作为产品路线 |
-
-建议先验证“工具栏帮助按钮 → 已知主题”，再研究 F1 原生的主题定位结果能否被桥接。查看器端需要新增单实例激活与 IPC：第二次调用把规范化主题交给已有窗口、恢复并置前，而非每次开新窗口。可考虑同用户范围的 QLocalServer / named pipe，校验请求大小、相对文档路径及允许的主题类型；传输结构化消息，不执行命令字符串。
-
-未来协议建议为 `library/release + relative path + fragment + optional command ID`，便携程序路径由集成配置管理，不能固化 `C:\Code`。工作台 ID、特征类型可作为降级搜索线索，但不能等同于当前活动命令。无匹配时打开相应分类或带范围的搜索，说明未找到精确主题。
-
-下一轮研究的具体验证：在用户授权修改测试环境后，选 Pad / Edge Fillet / 非模态 Capture 三个命令，记录 F1 打开的实际 URL；检查设置允许的目标类型、URL 查询参数及本机资料中的命令帮助映射；验证是否能稳定传入 `--open` 对应的相对页与 anchor。只有证据支持后才决定是否采用 HTTP 桥接或 CAA。本轮不提供一个未经验证、可能改坏 CATIA 帮助路径的脚本。
+A 轮已退出 CATIA 内部帮助集成方向，旧 hook、工具栏、宏及上下文桥接方案不再维护。当前只保留阅读器主动打开示例文件的可选能力，以及通用窗口激活。新交互见 [A 轮说明](stage-a.md)。
 
 ## 验证
 
@@ -99,4 +73,4 @@
 
 最终 EXE 从其他工作目录执行自检，10 项检查全部通过：HTTP 客户端、pythoncom、win32com、CT2、SentencePiece、FTS5、图标、WebEngine 子进程、MSVC 运行库和离线双向推理。随后通过 computer-use 检查该 EXE 的真实窗口：正文与图片正常，分类下拉箭头清楚，Ctrl+, 打开设置；双击正文的 pad 后自动显示“凸台（拉伸）”，服务和“已完成”显示在底栏，译文无服务尾注。窗口检查使用 `.cache/portable-ui.toml` 独立配置，不污染发行目录默认值。
 
-仍需在没有 Python / CATIA 的独立 Windows 电脑验收；本机成功不等于所有 Windows 环境均通过。CATIA hook、整页翻译与真实 CATIA 模型打开均不在本轮已实现或实测范围内。
+仍需在没有 Python / CATIA 的独立 Windows 电脑验收；本机成功不等于所有 Windows 环境均通过。本节为第四阶段的历史验证结果，当前范围以 A 轮说明为准。

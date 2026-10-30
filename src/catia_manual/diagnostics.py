@@ -26,6 +26,17 @@ def verify_runtime(settings: Settings, output: Path) -> int:
     except Exception as exc:
         checks["fts5"] = str(exc)
     checks["icons"] = all((ASSETS / name).is_file() for name in ("app.ico", "app.svg"))
+    try:
+        from PySide6.QtCore import QFile
+        from PySide6.QtWebChannel import QWebChannel
+
+        checks["resource_bridge"] = (
+            bool(QWebChannel)
+            and QFile(":/qtwebchannel/qwebchannel.js").exists()
+            and (ASSETS / "reader_resources.js").is_file()
+        )
+    except Exception as exc:
+        checks["resource_bridge"] = str(exc)
     if is_compiled():
         checks["webengine_process"] = any(application_directory().rglob("QtWebEngineProcess.exe"))
         checks["msvc_runtime"] = (application_directory() / "msvcp140.dll").is_file()
