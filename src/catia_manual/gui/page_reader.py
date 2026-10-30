@@ -9,7 +9,9 @@ from PySide6.QtWidgets import QButtonGroup, QHBoxLayout, QToolButton, QWidget
 
 from catia_manual.core.index import ManualIndex
 from catia_manual.core.page_translation import PageTranslationService, PageTranslationTask
+from catia_manual.core.parser import ManualParser
 from catia_manual.core.providers import PROVIDERS
+from catia_manual.core.source import resolve_source, source_for_block
 from catia_manual.core.translation import make_provider
 from catia_manual.gui.style import ASSETS
 from catia_manual.gui.widgets import ElidedLabel
@@ -25,6 +27,11 @@ class PageReader:
         self.page_worker_running = False
         self.page_sessions = OrderedDict()
         self.reading_positions = {}
+        self.pending_locations = {}
+        self.last_queued_locations = {}
+        self.location_save_timer = QTimer(self)
+        self.location_save_timer.setSingleShot(True)
+        self.location_save_timer.timeout.connect(self.flush_reading_locations)
         self.page_service_error = ""
         self.page_pump = QTimer(self)
         self.page_pump.setSingleShot(True)
@@ -77,6 +84,7 @@ class PageReader:
         location = self.history.current
         if not task or self.page_loading or not self.page_ready:
             return
+        document, library_id, settings = self.current_document, self.library_id, self.settings
 
         def captured(value):
             if isinstance(value, str):
@@ -88,10 +96,37 @@ class PageReader:
                 self.reading_positions[task.page.key] = value
                 if location and location.path == task.page.path:
                     location.reading_anchor = value
+                    block = next(
+                        (b for b in document.blocks if b.id == value.get("source_block")), None
+                    )
+                    if block is not None and library_id:
+                        source = source_for_block(
+                            library_id, document, block, value.get("offset", 0)
+                        )
+                        location.source = source.to_dict()
+                        identity = (str(settings.database), source.document.document_id)
+                        if self.last_queued_locations.get(identity) != location.source:
+                            self.last_queued_locations[identity] = location.source
+                            self.pending_locations[identity] = (settings, source)
+                            self.location_save_timer.start(800)
 
         self.application_script(
             "JSON.stringify(window.cmvReader && window.cmvReader.capture())", captured
         )
+
+    def flush_reading_locations(self):
+        self.location_save_timer.stop()
+        pending = list(self.pending_locations.values())
+        self.pending_locations.clear()
+        if not pending:
+            return
+
+        def save(_):
+            for settings, source in pending:
+                with ManualIndex(settings.database, settings.root) as index:
+                    index.save_location(source)
+
+        self.submit(save, lambda _: None)
 
     def attach_reading_page(self, restore=None, fragment=""):
         page = self.reading_page
@@ -130,19 +165,43 @@ class PageReader:
 
         def cache_work(_):
             with ManualIndex(settings.database, settings.root) as index:
-                service = PageTranslationService(
-                    index, make_provider(config), page, config.get("target_language", "zh-CN")
-                )
-                return service.cached()
+                stored_position, notice = None, ""
+                if position is None:
+                    saved = index.load_location(page.path)
+                    if saved:
+                        resolution = resolve_source(
+                            ManualParser(settings.root), saved, index.library_id
+                        )
+                        if resolution.source:
+                            resolved = resolution.source
+                            stored_position = {
+                                "source_block": resolved.block_id,
+                                "fragment": resolved.fragment,
+                                "offset": resolved.offset_css_px,
+                            }
+                        else:
+                            notice = "原文已修订，未恢复无法唯一定位的旧阅读位置"
+                results, error = {}, ""
+                try:
+                    service = PageTranslationService(
+                        index, make_provider(config), page, config.get("target_language", "zh-CN")
+                    )
+                    results = service.cached()
+                except (ValueError, OSError) as exc:
+                    error = str(exc)
+                return results, index.library_id, stored_position, error, notice
 
-        def loaded(results):
+        def loaded(value):
             if self.page_task is not task or self.navigation_generation != generation:
                 return
+            results, self.library_id, stored_position, self.page_service_error, notice = value
             task.results.update(results)
             self.page_ready = True
-            self.apply_page_update(position=position)
+            self.apply_page_update(position=position if position is not None else stored_position)
             self.update_page_controls()
             self.page_pump.start(100)
+            if notice:
+                self.statusBar().showMessage(notice)
 
         def failed(message):
             if self.page_task is task and self.navigation_generation == generation:

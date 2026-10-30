@@ -295,7 +295,7 @@ class GlobalSettings(QDialog):
         return {
             "documentation": {
                 "root": self.root.text().strip(),
-                "database": str(Path(self.data_dir.text()) / "manuals.sqlite3"),
+                "database": str(Path(self.data_dir.text()) / self.original.database.name),
             },
             "catia": {
                 "launcher": self.launcher.text().strip(),

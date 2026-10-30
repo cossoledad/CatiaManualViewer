@@ -292,8 +292,17 @@ def finish():
     (project / "data/stage5-gui.json").write_text(json.dumps(report, indent=2), "utf-8")
     print(json.dumps(report))
     QThreadPool.globalInstance().waitForDone()
-    window.close()
-    app.exit(0 if report["passed"] else 1)
+    window.position_timer.stop()
+    window.flush_reading_locations()
+
+    def shutdown():
+        if window.jobs:
+            QTimer.singleShot(50, shutdown)
+        else:
+            window.close()
+            app.exit(0 if report["passed"] else 1)
+
+    shutdown()
 
 
 QTimer.singleShot(90000, lambda: (report["failures"].append("watchdog"), finish()))

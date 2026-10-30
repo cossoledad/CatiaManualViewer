@@ -119,6 +119,10 @@ class WorkspaceUI:
         self.build_button = QAction(icon("refresh"), "更新文档索引", self)
         self.build_button.triggered.connect(self.build_index)
         menu.addAction(self.build_button)
+        self.library_action = menu.addAction("文档库管理…")
+        self.library_action.triggered.connect(self.manage_library)
+        self.terms_action = menu.addAction("术语与别名…")
+        self.terms_action.triggered.connect(self.manage_terms)
         self.tools_action = QAction("显示阅读侧栏", self)
         self.tools_action.setCheckable(True)
         self.tools_action.setChecked(self.settings.appearance.get("show_tools", True))
@@ -343,6 +347,7 @@ class WorkspaceUI:
             self.history.save_scroll(0, self.home_scroll.verticalScrollBar().value())
 
     def show_home(self, category_id=None, remember=True, history_index=None):
+        self.statusBar().clear_source("source")
         self.save_location_scroll()
         self.detach_reading_page()
         self.navigation_generation += 1

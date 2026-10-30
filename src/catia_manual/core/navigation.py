@@ -9,6 +9,7 @@ class Location:
     x: float = 0
     y: float = 0
     reading_anchor: dict | None = None
+    source: dict | None = None
 
 
 class NavigationHistory:

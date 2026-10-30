@@ -50,7 +50,9 @@ class PageTranslationService:
 
     def translate(self, unit: ReadingUnit):
         row = self.index.connection.execute(
-            "SELECT translated_text FROM page_translations WHERE cache_key=?", (self.key(unit),)
+            "SELECT translated_text FROM page_translations WHERE cache_key=? OR "
+            "(page_path=? AND source_hash=? AND unit_id=? AND fingerprint=?) LIMIT 1",
+            (self.key(unit), self.page.path, self.page.content_hash, unit.id, self.fingerprint),
         ).fetchone()
         if row:
             return TranslationResult(row[0], self.provider.name, True)

@@ -1,18 +1,21 @@
 import hashlib
 import html
 import re
+import unicodedata
 from pathlib import Path
 
-from bs4 import BeautifulSoup, NavigableString, Tag, UnicodeDammit
+from bs4 import BeautifulSoup, Tag, UnicodeDammit
 
 from catia_manual.core.legacy import LegacyLinks
-from catia_manual.core.models import Block, Document, TocEntry
+from catia_manual.core.library_contract import relative_path
+from catia_manual.core.models import Document, TocEntry
 from catia_manual.core.paths import resolve_link, within_root
 from catia_manual.core.reading import READING_CSS, ReadingPage, annotate
 from catia_manual.core.resources import IMAGE_EXTENSIONS
+from catia_manual.core.source import EXCLUDED, extract_blocks
 
 BLOCK_TAGS = {"h1", "h2", "h3", "h4", "h5", "h6", "p", "li", "td", "th", "pre", "dt", "dd"}
-PARSER_VERSION = "2"
+PARSER_VERSION = "3"
 STATIC_CALL = re.compile(r"(?:GoToBody|openwin|window\.open)\s*\(\s*(['\"])(.*?)\1", re.I)
 
 
@@ -25,7 +28,28 @@ class ManualParser:
         self.root = root.resolve()
 
     def source(self, relative: str) -> Path:
-        return within_root(self.root, self.root / relative)
+        target = within_root(self.root, self.root / relative)
+        if not target.exists():
+            current = self.root
+            for part in target.relative_to(self.root).parts:
+                direct = current / part
+                if direct.exists():
+                    current = direct
+                    continue
+                if not current.is_dir():
+                    return target
+                candidates = [
+                    p
+                    for p in current.iterdir()
+                    if unicodedata.normalize("NFC", p.name) == unicodedata.normalize("NFC", part)
+                ]
+                if len(candidates) > 1:
+                    raise ValueError("来源路径存在 Unicode 冲突")
+                if not candidates:
+                    return target
+                current = candidates[0]
+            target = within_root(self.root, current)
+        return target
 
     def soup(self, relative: str) -> tuple[BeautifulSoup, bytes, str]:
         raw = self.source(relative).read_bytes()
@@ -41,7 +65,7 @@ class ManualParser:
 
     def parse(self, relative: str) -> Document:
         source = self.source(relative)
-        relative = source.relative_to(self.root).as_posix()
+        relative = relative_path(source.relative_to(self.root).as_posix())
         soup, raw, encoding = self.soup(relative)
         title_tag = soup.find("h1") or soup.title
         title = clean_text(title_tag.get_text(" ", strip=True)) if title_tag else source.stem
@@ -59,32 +83,16 @@ class ManualParser:
         for tag in soup.find_all(["script", "style", "head", "noscript", "object", "applet"]):
             tag.decompose()
         body = soup.body or soup
-        blocks: list[Block] = []
-        owner = None
-        parts: list[str] = []
-
-        def flush() -> None:
-            text = clean_text(" ".join(parts))
-            if text:
-                digest = hashlib.sha256(f"{relative}:{len(blocks)}:{text}".encode()).hexdigest()[
-                    :20
-                ]
-                blocks.append(Block(digest, owner.name if owner else "text", text))
-            parts.clear()
-
-        for node in body.descendants:
-            if not isinstance(node, NavigableString) or node.__class__.__name__ == "Comment":
-                continue
-            if not clean_text(str(node)):
-                continue
-            parent = node.parent
-            while parent is not None and parent is not body and parent.name not in BLOCK_TAGS:
-                parent = parent.parent
-            if parent is not owner:
-                flush()
-                owner = parent
-            parts.append(str(node))
-        flush()
+        blocks = extract_blocks(soup, relative)
+        anchors = list(
+            dict.fromkeys(
+                str(t.get("id") or t.get("name"))
+                for t in body.find_all(True)
+                if (t.get("id") or (t.name == "a" and t.get("name")))
+                and t.name not in EXCLUDED
+                and not any(p.name in EXCLUDED for p in t.parents)
+            )
+        )
         kind = (
             "frameset"
             if frames
@@ -105,6 +113,7 @@ class ManualParser:
             text="\n".join(block.text for block in blocks),
             blocks=blocks,
             links=links,
+            anchors=anchors,
             headings=[block.text for block in blocks if block.kind.startswith("h")],
         )
 
@@ -114,6 +123,7 @@ class ManualParser:
     def render_page(self, relative: str) -> ReadingPage:
         """Keep original tables/images/anchors; remove executable legacy navigation."""
         source = self.source(relative)
+        relative = relative_path(source.relative_to(self.root).as_posix())
         soup, raw, _ = self.soup(relative)
         for tag in soup.find_all(
             [
@@ -174,6 +184,7 @@ class ManualParser:
             if tag.name in {"table", "tr", "td", "th"}:
                 tag.attrs.pop("height", None)
         content_hash = hashlib.sha256(raw).hexdigest()
+        extract_blocks(soup, relative, annotate=True)
         page_key, units = annotate(soup, relative, content_hash)
         content = soup.body.decode_contents() if soup.body else str(soup)
         title = html.escape(source.stem)

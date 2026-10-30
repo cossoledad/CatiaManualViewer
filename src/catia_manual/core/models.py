@@ -16,6 +16,8 @@ class Block:
     id: str
     kind: str
     text: str
+    fragment: str = ""
+    heading_path: tuple[str, ...] = ()
 
 
 @dataclass
@@ -30,6 +32,7 @@ class Document:
     blocks: list[Block] = field(default_factory=list)
     links: list[Link] = field(default_factory=list)
     headings: list[str] = field(default_factory=list)
+    anchors: list[str] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -39,6 +42,10 @@ class SearchHit:
     module: str
     snippet: str
     score: float
+    document_id: str = ""
+    source: dict | None = None
+    heading_path: list[str] = field(default_factory=list)
+    reason: str = "正文关键词匹配"
 
 
 @dataclass(frozen=True)

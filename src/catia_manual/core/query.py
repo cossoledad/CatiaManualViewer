@@ -2,8 +2,21 @@ import re
 from dataclasses import dataclass, field
 
 CJK = re.compile(r"[\u3400-\u9fff]")
+TERMINOLOGY_VERSION = "cad-terms-2"
 # Alternatives within one concept use OR; separate concepts use AND.
 TERMS = {
+    "凸起": ("pad", "extrude"),
+    "挖空": ("pocket",),
+    "切除": ("pocket", "remove"),
+    "封闭轮廓": ("closed profile",),
+    "开口轮廓": ("open profile",),
+    "拉伸至曲面": ("pad up to surface",),
+    "直到曲面": ("up to surface",),
+    "终止面": ("limiting surface",),
+    "矩形阵列": ("rectangular pattern",),
+    "环形阵列": ("circular pattern",),
+    "贯穿": ("through all",),
+    "对称拉伸": ("mirrored extent",),
     "零件设计": ("part design",),
     "装配设计": ("assembly design",),
     "创成式外形设计": ("generative shape design",),
@@ -75,6 +88,24 @@ TERMS = {
     "选择": ("select",),
 }
 FILLERS = (
+    "能不能",
+    "是否可以",
+    "需要",
+    "应该",
+    "设置",
+    "指定",
+    "某个",
+    "某种",
+    "沿着",
+    "把",
+    "将",
+    "让",
+    "沿",
+    "到",
+    "对",
+    "中",
+    "上",
+    "以",
     "如何",
     "怎么",
     "怎样",
@@ -115,18 +146,32 @@ class QueryPlan:
     unknown: str = ""
     method: str = "english"
     notes: list[str] = field(default_factory=list)
+    groups: list[str] = field(default_factory=list)
+    suggestions: list[str] = field(default_factory=list)
 
 
-def plan_query(query: str) -> QueryPlan:
+def plan_query(query: str, aliases=None) -> QueryPlan:
     query = query.strip()[:500]
     if not CJK.search(query):
-        return QueryPlan(query, phrase(query), query)
+        shortcuts = {
+            "gsd": ("generative shape design",),
+            "boss": ("pad",),
+            **{k.casefold(): v for k, v in (aliases or {}).items()},
+        }
+        if query.casefold() in shortcuts:
+            alternatives = shortcuts[query.casefold()]
+            group = "(" + " OR ".join("(" + phrase(term) + ")" for term in alternatives) + ")"
+            return QueryPlan(query, group, " / ".join(alternatives), method="alias", groups=[group])
+        tokens = [word for word in words(query) if word.casefold() not in ENGLISH_STOPWORDS]
+        groups = [phrase(token) for token in tokens]
+        return QueryPlan(query, " AND ".join(groups), " ".join(tokens), groups=groups)
     remaining = query
     groups, expanded = [], []
-    for chinese in sorted(TERMS, key=len, reverse=True):
+    terms = {**TERMS, **(aliases or {})}
+    for chinese in sorted(terms, key=len, reverse=True):
         if chinese not in remaining:
             continue
-        alternatives = TERMS[chinese]
+        alternatives = terms[chinese]
         groups.append("(" + " OR ".join("(" + phrase(term) + ")" for term in alternatives) + ")")
         expanded.append(" / ".join(alternatives))
         remaining = remaining.replace(chinese, " ")
@@ -144,4 +189,5 @@ def plan_query(query: str) -> QueryPlan:
         unknown,
         "terminology",
         ["中文术语映射到英文原文"],
+        groups,
     )

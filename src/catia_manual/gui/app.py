@@ -38,6 +38,7 @@ from PySide6.QtWidgets import (
 
 from catia_manual.config import Settings, load_settings, save_settings, save_translation
 from catia_manual.core.index import ManualIndex
+from catia_manual.core.library_contract import SourceLocation
 from catia_manual.core.navigation import Location, NavigationHistory
 from catia_manual.core.parser import ManualParser
 from catia_manual.core.paths import resolve_link
@@ -45,6 +46,7 @@ from catia_manual.core.providers import PROVIDERS
 from catia_manual.core.reader_state import ReaderState
 from catia_manual.core.resources import IMAGE_EXTENSIONS
 from catia_manual.core.search import SearchService
+from catia_manual.core.source import resolve_source
 from catia_manual.core.translation import TranslationService, make_provider
 from catia_manual.gui.page_reader import PageReader
 from catia_manual.gui.resource_actions import ResourceActions, ResourceBridge
@@ -125,6 +127,7 @@ class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
         self.render_cache = settings.database.parent / "rendered"
         self.render_cache.mkdir(parents=True, exist_ok=True)
         self.current_document = None
+        self.library_id = None
         self.history = NavigationHistory()
         self.document_cache = OrderedDict()
         self.navigation_generation = 0
@@ -264,7 +267,77 @@ class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
         if item.data(Qt.ItemDataRole.UserRole) == "@index":
             self.build_index()
             return
-        self.open_document(item.data(Qt.ItemDataRole.UserRole))
+        source = item.data(Qt.ItemDataRole.UserRole + 1)
+        if source:
+            self.open_source(source)
+        else:
+            self.open_document(item.data(Qt.ItemDataRole.UserRole))
+
+    def manage_library(self):
+        from catia_manual.gui.library import LibraryDialog
+
+        self.flush_preferences()
+        self.flush_reading_locations()
+        dialog = LibraryDialog(self)
+        dialog.exec()
+        dialog.deleteLater()
+
+    def manage_terms(self):
+        from catia_manual.gui.library import TermsDialog
+
+        dialog = TermsDialog(self)
+        dialog.exec()
+        dialog.deleteLater()
+
+    def open_source(self, value, history_index=None):
+        try:
+            source = SourceLocation.from_dict(value)
+        except (ValueError, TypeError, KeyError) as exc:
+            self.show_error(str(exc))
+            return
+        self.save_location_scroll()
+        self.detach_reading_page()
+        self.navigation_generation += 1
+        generation = self.navigation_generation
+        self.page_loading = True
+        self.requested_history_position = history_index
+        self.statusBar().publish("source", "正在核对原文位置…", priority=40, timeout=0)
+        if self.center_stack.currentWidget() == self.web:
+            self.web.begin_navigation()
+        settings = self.settings
+
+        def work(_):
+            with ManualIndex(settings.database, settings.root) as index:
+                return resolve_source(ManualParser(settings.root), source, index.library_id)
+
+        def failed(message):
+            if generation != self.navigation_generation:
+                return
+            self.statusBar().clear_source("source")
+            self.page_loading = False
+            self.requested_history_position = None
+            self.web.reveal()
+            if self.reading_page:
+                self.attach_reading_page()
+            self.show_error(message)
+
+        def done(result):
+            if generation != self.navigation_generation:
+                return
+            if result.source is None:
+                failed(result.reason)
+                return
+            self.statusBar().clear_source("source")
+            self.open_document(
+                result.source.document.path,
+                result.source.fragment,
+                history_index=history_index,
+                source_location=result.source.to_dict(),
+            )
+            if result.status.startswith("relocated"):
+                self.statusBar().showMessage("原文已修订，已重新定位来源", 4000)
+
+        self.submit(work, done, error=failed)
 
     def open_document(
         self,
@@ -272,7 +345,9 @@ class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
         fragment: str = "",
         remember: bool = True,
         history_index: int | None = None,
+        source_location: dict | None = None,
     ):
+        self.statusBar().clear_source("source")
         self.save_location_scroll()
         self.detach_reading_page()
         parser, render_cache = self.parser, self.render_cache
@@ -288,10 +363,9 @@ class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
 
         def prepare(_):
             source = parser.source(relative)
-            stat = source.stat()
-            key = (str(source), stat.st_mtime_ns, stat.st_size)
+            key = (str(source), hashlib.sha256(source.read_bytes()).hexdigest())
             cached_result = self.document_cache.get(key)
-            if cached_result is not None:
+            if cached_result is not None and cached_result[1].path == relative:
                 return cached_result
             document = parser.parse(relative)
             visited = {document.path}
@@ -355,6 +429,14 @@ class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
                 if remember:
                     self.history.visit(Location(document.path, fragment, document.title))
                 self.pending_restore = None
+            if source_location:
+                self.pending_reading_restore = {
+                    "source_block": source_location.get("block_id", ""),
+                    "fragment": source_location.get("fragment", ""),
+                    "offset": source_location.get("offset_css_px", 0),
+                }
+                if self.history.current:
+                    self.history.current.source = source_location
             self.page_title.setText(document.title)
             self.page_title.setToolTip(document.path)
             self.samples.clear()
@@ -525,6 +607,9 @@ class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
             )
             self.show_home(category, remember=False, history_index=position)
             return
+        if location.source:
+            self.open_source(location.source, history_index=position)
+            return
         self.open_document(location.path, location.fragment, history_index=position)
 
     def update_history_actions(self):
@@ -605,9 +690,13 @@ class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
                 manual = self.catalog.manuals.get(hit.module)
                 label = manual.label if manual else "参考文档"
                 preview = " ".join(hit.snippet.split())[:170]
-                item = QListWidgetItem(f"{hit.title}\n{label}\n{preview}")
+                heading = " / ".join(hit.heading_path[1:])
+                item = QListWidgetItem(
+                    f"{hit.title}\n{label}" + (" · " + heading if heading else "") + f"\n{preview}"
+                )
                 item.setData(Qt.ItemDataRole.UserRole, hit.path)
-                item.setToolTip(hit.path)
+                item.setData(Qt.ItemDataRole.UserRole + 1, hit.source)
+                item.setToolTip(hit.reason + "\n" + hit.path)
                 self.results.addItem(item)
             self.tabs.setCurrentWidget(self.results)
             if indexed == 0:
@@ -618,8 +707,9 @@ class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
                 return
             summary = f"{scope_label} · {len(response.hits)} 个结果"
             self.query.setToolTip(response.plan.expanded)
-            if response.plan.unknown:
-                summary += " · " + "；".join(response.plan.notes)
+            notes = [note for note in response.plan.notes if note != "中文术语映射到英文原文"]
+            if notes:
+                summary += " · " + "；".join(notes)
             self.statusBar().publish("search", summary, record=True)
 
         def failed(message):
@@ -858,6 +948,8 @@ class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
             self.interceptor.roots = [settings.root.resolve(), self.render_cache.resolve()]
             self.document_cache.clear()
             self.current_document = None
+            self.library_id = None
+            self.reading_positions.clear()
             self.history = NavigationHistory()
             self.reload_catalog()
             self.results.clear()
@@ -871,10 +963,13 @@ class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
 
     def closeEvent(self, event):
         self.page_pump.stop()
+        self.position_timer.stop()
+        self.flush_reading_locations()
         if self.page_task:
             self.page_task.paused = True
         if self.jobs:
-            self.statusBar().showMessage("后台任务仍在运行，完成后可关闭窗口")
+            self.statusBar().showMessage("正在保存并等待后台任务完成…")
+            QTimer.singleShot(100, self.close)
             event.ignore()
             return
         self.flush_preferences()

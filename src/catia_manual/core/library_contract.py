@@ -1,4 +1,4 @@
-"""Version 1 of the Qt-free library/source wire contract. No index migration yet."""
+"""Version 1 of the Qt-free library/source wire contract, persisted by the index."""
 
 import hashlib
 import math

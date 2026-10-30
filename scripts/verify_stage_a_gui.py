@@ -94,7 +94,20 @@ def wait(predicate, seconds=20):
         if predicate():
             return
         QTest.qWait(20)
-    raise TimeoutError("native reader acceptance timed out")
+    task = window.page_task
+    raise TimeoutError(
+        "native reader acceptance timed out: "
+        + str(
+            {
+                "ready": window.page_ready,
+                "loading": window.page_loading,
+                "service_error": window.page_service_error,
+                "results": len(task.results) if task else None,
+                "units": len(task.page.units) if task else None,
+                "errors": task.errors if task else None,
+            }
+        )
+    )
 
 
 def js(script):
@@ -275,6 +288,9 @@ finally:
         window.page_task.paused = True
     QThreadPool.globalInstance().waitForDone()
     app.processEvents()
+    window.position_timer.stop()
+    window.flush_reading_locations()
+    wait(lambda: not window.jobs)
     window.close()
     app.processEvents()
     report["passed"] = not report["failures"]

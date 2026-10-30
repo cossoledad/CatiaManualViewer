@@ -9,8 +9,11 @@ from pathlib import Path
 from catia_manual.config import load_settings
 from catia_manual.core.catalog import ManualCatalog
 from catia_manual.core.index import ManualIndex
+from catia_manual.core.library import attach_copy, snapshot, verify_copy
+from catia_manual.core.library_contract import SourceLocation
 from catia_manual.core.parser import ManualParser
 from catia_manual.core.search import SearchService
+from catia_manual.core.source import resolve_source, source_for_block
 from catia_manual.core.translation import TranslationService, make_provider
 from catia_manual.integrations.catia import CatiaLauncher
 
@@ -40,6 +43,20 @@ def main(argv: list[str] | None = None) -> int:
     for name in ("read", "toc", "examples"):
         command = sub.add_parser(name)
         command.add_argument("path", help="相对于文档根目录的路径")
+        if name == "read":
+            command.add_argument("--with-source", action="store_true")
+    library = sub.add_parser("library", help="文档库身份、验证副本与安全快照")
+    library.add_argument("action", choices=("status", "manifest", "verify", "attach", "snapshot"))
+    library.add_argument("--database", type=Path, help="已有索引，默认使用当前配置")
+    library.add_argument("--root", type=Path, help="待验证的文档副本")
+    library.add_argument("--destination", type=Path)
+    library.add_argument("--accept-revision", action="store_true", help="明确确认副本属于同库修订")
+    source = sub.add_parser("resolve-source", help="解析 v1 来源位置 JSON")
+    source.add_argument("location", type=Path)
+    terms = sub.add_parser("terms", help="读取或设置用户术语别名")
+    terms.add_argument("--alias")
+    terms.add_argument("--english")
+    terms.add_argument("--module", default="")
     launch = sub.add_parser("open", help="查看打开示例的命令，--execute 才实际启动")
     launch.add_argument("path")
     launch.add_argument("--execute", action="store_true")
@@ -77,8 +94,73 @@ def main(argv: list[str] | None = None) -> int:
                 }
             )
         elif args.command == "read":
-            result = asdict(manual.parse(args.path))
+            document = manual.parse(args.path)
+            result = asdict(document)
+            if args.with_source:
+                with ManualIndex(settings.database, settings.root) as repository:
+                    result["library_id"] = repository.library_id
+                    result["sources"] = [
+                        source_for_block(repository.library_id, document, b, ordinal=i).to_dict()
+                        for i, b in enumerate(document.blocks)
+                    ]
             emit(result)
+        elif args.command == "library":
+            database = args.database or settings.database
+            root = args.root or settings.root
+            if args.action in {"verify", "attach"}:
+                if args.action == "verify":
+                    result = verify_copy(database, root)
+                    emit(result)
+                    return 0 if result["matched"] else 2
+                if args.destination is None:
+                    raise ValueError("attach 必须指定 --destination，原索引不会被改绑")
+                emit(
+                    attach_copy(
+                        database, root, args.destination, accept_revision=args.accept_revision
+                    )
+                )
+            elif args.action == "snapshot":
+                if args.destination is None:
+                    raise ValueError("snapshot 必须指定 --destination")
+                emit({"snapshot": str(snapshot(database, args.destination))})
+            else:
+                with ManualIndex(database, root) as repository:
+                    if args.action == "status":
+                        emit(repository.stats())
+                    else:
+                        if repository.meta("manifest_verified") != "1":
+                            raise ValueError("请先完整更新索引以生成已验证清单")
+                        emit(
+                            {
+                                "schema_version": 1,
+                                "library_id": repository.library_id,
+                                "release": repository.meta("release"),
+                                "language": repository.meta("language"),
+                                "manifest_hash": repository.meta("manifest_hash"),
+                                "files": [
+                                    dict(row)
+                                    for row in repository.connection.execute(
+                                        "SELECT * FROM library_files ORDER BY path"
+                                    )
+                                ],
+                            }
+                        )
+        elif args.command == "resolve-source":
+            location = SourceLocation.from_dict(json.loads(args.location.read_text("utf-8")))
+            with ManualIndex(settings.database, settings.root) as repository:
+                emit(resolve_source(manual, location, repository.library_id).to_dict())
+        elif args.command == "terms":
+            with ManualIndex(settings.database, settings.root) as repository:
+                if args.alias:
+                    repository.set_alias(args.alias, args.english or "", args.module)
+                emit(
+                    [
+                        dict(row)
+                        for row in repository.connection.execute(
+                            "SELECT * FROM term_aliases ORDER BY alias,module"
+                        )
+                    ]
+                )
         elif args.command == "toc":
             emit([asdict(item) for item in manual.toc(args.path)])
         elif args.command == "examples":

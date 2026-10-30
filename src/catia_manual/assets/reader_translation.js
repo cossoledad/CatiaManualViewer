@@ -15,11 +15,21 @@
       const rect = node.getBoundingClientRect();
       return rect.width && rect.bottom > 0 && rect.top < innerHeight;
     });
-    return {id: node ? node.dataset.unit : '',
+    const marker = node && node.querySelector('[data-cmv-source-block]');
+    return {id: node ? node.dataset.unit : '', source_block: marker ? marker.dataset.cmvSourceBlock : '',
       offset: node ? node.getBoundingClientRect().top : 0, x: scrollX, y: scrollY};
   }
   function restore(position) {
     if (!position) return;
+    if (position.source_block) {
+      const marker = [...document.querySelectorAll('[data-cmv-source-block]')]
+        .find(n => n.dataset.cmvSourceBlock === position.source_block);
+      const block = marker && (marker.closest('.cmv-unit') || marker);
+      if (block && block.getClientRects().length) {
+        scrollBy(0, block.getBoundingClientRect().top - (position.offset || 0));
+        return;
+      }
+    }
     if (position.fragment) {
       const target = document.getElementById(position.fragment)
         || document.getElementsByName(position.fragment)[0];

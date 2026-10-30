@@ -33,7 +33,7 @@ class LocalTranslationProvider:
             if (manifest.is_file())
             else "missing"
         )
-        self.name = f"local-argos-v3:{self.model_dir}:{self.revision}"
+        self.name = f"local-argos-v3:{self.revision}"
 
     def translate(self, text: str, target: str) -> str:
         from catia_manual.core.translation import GLOSSARY

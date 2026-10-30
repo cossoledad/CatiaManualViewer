@@ -42,8 +42,16 @@ GitHub Actions 的构建和发布入口、权限与首次标签步骤见 [CI 与
 .\.venv\Scripts\python.exe -m catia_manual search '圆角' --category mechanical-design --explain
 .\.venv\Scripts\python.exe -m catia_manual catalog
 .\.venv\Scripts\python.exe -m catia_manual read online/prtug_C2/prtugbt0501.htm
+.\.venv\Scripts\python.exe -m catia_manual read online/prtug_C2/prtugbt0501.htm --with-source
 .\.venv\Scripts\python.exe -m catia_manual examples online/prtug_C2/prtugbt0501.htm
 .\.venv\Scripts\python.exe -m catia_manual stats
+.\.venv\Scripts\python.exe -m catia_manual library status
+.\.venv\Scripts\python.exe -m catia_manual library manifest
+.\.venv\Scripts\python.exe -m catia_manual library verify --database data/index.sqlite3 --root 'D:\Manuals\English'
+.\.venv\Scripts\python.exe -m catia_manual library attach --database data/index.sqlite3 --root 'D:\Manuals\English' --destination data/library-copy.sqlite3
+.\.venv\Scripts\python.exe -m catia_manual library snapshot --destination data/library-snapshot.sqlite3
+.\.venv\Scripts\python.exe -m catia_manual terms --alias '终止曲面' --english 'limiting surface' --module prtug_C2
+.\.venv\Scripts\python.exe -m catia_manual resolve-source .cache/source.json
 ```
 
 JSON CLI 和 `core` 不依赖 Qt。调用时使用参数列表，并以 UTF-8 读取 stdout。`open <示例路径>` 默认仅给出启动参数，加 `--execute` 才实际打开。GUI 开发入口支持 `--open <本地文档路径或可映射的文档 URL>`。
@@ -59,6 +67,7 @@ JSON CLI 和 `core` 不依赖 Qt。调用时使用参数列表，并以 UTF-8 �
 .\.venv\Scripts\python.exe scripts/verify_stage5_gui.py
 .\.venv\Scripts\python.exe scripts/verify_real_page_translation.py
 .\.venv\Scripts\python.exe scripts/verify_stage_a_gui.py
+.\.venv\Scripts\python.exe scripts/verify_stage_b_gui.py
 ```
 
 原生 GUI 验证会短暂显示窗口，使用独立测试配置和离线模型；示例链接被捕获，不实际启动 CATIA。阶段 2 验证选词 / 句子 / 过期请求 / 链接 / 导航；阶段 3 验证分类 / 设置 / 迁移 / 侧键；阶段 4 验证新按钮 / 菜单 / 底栏。截图和 JSON 报告在忽略提交的 `data` 中。
@@ -68,4 +77,6 @@ JSON CLI 和 `core` 不依赖 Qt。调用时使用参数列表，并以 UTF-8 �
 `verify_stage5_gui.py` 使用构造语料及可控 provider，检查渐进加载、优先级、暂停、失败重试、三种模式、锚点、历史位置和 SQLite 复用。`verify_real_page_translation.py` 使用真实 Creating Pads 和离线模型。`verify_stage_a_gui.py` 使用构造语料与模拟外部操作，检查模式持久化、能力降级、双击、图片预览和状态优先级。以上验证均在本机手动运行，不接入 CI。
 
 
-B 轮接口定义见 [文档库与来源位置契约](library-contract.md)。现有索引仍保持原有根目录隔离，尚不自动复用搬迁后的数据库。
+B 轮实现见 [文档库与搜索](stage-b.md)，接口定义见 [文档库与来源位置契约](library-contract.md)。`library attach` 只生成已验证的数据库副本，不自动修改 GUI 配置；差异副本须显式加 `--accept-revision`，随后对新库完整更新索引。`verify` 内容不一致退出 2，命令失败退出 1。来源 JSON 可从 `search --explain` 的命中 source 或 `read --with-source` 取得。
+
+`verify_stage_b_gui.py` 验证精确来源、阅读位置、完整副本复用、原库隔离、术语编辑及歧义提示；与其他本机验收一样不接入 CI。Windows 排版验收使用原生 Qt 平台；可设置 `QT_SCALE_FACTOR=1.5` 检查高 DPI。
