@@ -123,6 +123,8 @@ class WorkspaceUI:
         self.library_action.triggered.connect(self.manage_library)
         self.terms_action = menu.addAction("术语与别名…")
         self.terms_action.triggered.connect(self.manage_terms)
+        self.semantic_action = menu.addAction("智能搜索…")
+        self.semantic_action.triggered.connect(self.manage_semantic)
         self.tools_action = QAction("显示阅读侧栏", self)
         self.tools_action.setCheckable(True)
         self.tools_action.setChecked(self.settings.appearance.get("show_tools", True))

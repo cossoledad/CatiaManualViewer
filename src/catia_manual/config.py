@@ -34,6 +34,7 @@ class Settings:
     translation: dict = field(default_factory=lambda: {"provider": "glossary"})
     config_path: Path | None = None
     appearance: dict = field(default_factory=lambda: dict(APPEARANCE))
+    search: dict = field(default_factory=lambda: {"mode": "keyword", "threads": 2})
 
 
 def database_for_root(database: Path, root: Path) -> Path:
@@ -85,6 +86,8 @@ def load_settings(path: Path | None = None) -> Settings:
     translation.setdefault("target_language", "zh-CN")
     translation["model_dir"] = str(absolute(translation.get("model_dir", "data/models")))
     translation.update(provider_profile(translation, translation["provider"]))
+    search = {"mode": "keyword", "threads": 2, **data.get("search", {})}
+    search["model_dir"] = str(absolute(search.get("model_dir", "data/search-models/e5-small")))
     return Settings(
         root=root,
         database=database_for_root(absolute(doc.get("database", "data/manuals.sqlite3")), root),
@@ -108,6 +111,7 @@ def load_settings(path: Path | None = None) -> Settings:
         if path
         else (project / "config.local.toml" if is_compiled() else None),
         appearance={**APPEARANCE, **data.get("appearance", {})},
+        search=search,
     )
 
 
@@ -136,6 +140,7 @@ def save_settings(settings: Settings, changes: dict) -> Settings:
         },
         "translation": settings.translation,
         "appearance": settings.appearance,
+        "search": settings.search,
     }
     for section, defaults in base_sections.items():
         if section not in document:

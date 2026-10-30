@@ -223,6 +223,36 @@ class GlobalSettings(QDialog):
         self.tabs.addTab(general, "文档与 CATIA")
         self.translation = TranslationSettings(settings.translation, parent, embedded=True)
         self.tabs.addTab(self.translation, "翻译")
+        search = QWidget()
+        search_form = QFormLayout(search)
+        search_form.setSpacing(18)
+        self.search_mode = QComboBox()
+        for label, value in (
+            ("关键词", "keyword"),
+            ("关键词＋语义", "hybrid"),
+            ("语义", "semantic"),
+        ):
+            self.search_mode.addItem(label, value)
+        self.search_mode.setCurrentIndex(
+            max(0, self.search_mode.findData(settings.search.get("mode", "keyword")))
+        )
+        search_form.addRow("搜索模式", self.search_mode)
+        self.search_model_dir = self.path_field(
+            search_form,
+            "语义模型目录",
+            settings.search.get("model_dir", "data/search-models/e5-small"),
+        )
+        self.search_threads = QSpinBox()
+        self.search_threads.setRange(1, 8)
+        self.search_threads.setValue(int(settings.search.get("threads", 2)))
+        search_form.addRow("推理线程", self.search_threads)
+        search_note = QLabel(
+            "通过更多菜单的‘智能搜索’下载模型并建立索引。语义搜索在本机运行；"
+            "模型或索引不可用时显示关键词结果。"
+        )
+        search_note.setWordWrap(True)
+        search_form.addRow(search_note)
+        self.tabs.addTab(search, "搜索")
         appearance = QWidget()
         visual = QFormLayout(appearance)
         visual.setSpacing(18)
@@ -312,6 +342,12 @@ class GlobalSettings(QDialog):
                 "reading_mode": self.reading_mode.currentData(),
                 "show_tools": self.tools.isChecked(),
                 "remember_window": self.remember_window.isChecked(),
+            },
+            "search": {
+                **self.original.search,
+                "mode": self.search_mode.currentData(),
+                "model_dir": self.search_model_dir.text().strip(),
+                "threads": self.search_threads.value(),
             },
         }
 

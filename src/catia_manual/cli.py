@@ -40,6 +40,9 @@ def main(argv: list[str] | None = None) -> int:
     search.add_argument("--category", help="功能分类名称或 ID，如 mechanical-design")
     search.add_argument("--limit", type=int, default=20)
     search.add_argument("--explain", action="store_true", help="同时输出中文查询展开方式")
+    search.add_argument("--mode", choices=("keyword", "hybrid", "semantic"))
+    semantic = sub.add_parser("semantic", help="本机语义模型与增量向量索引")
+    semantic.add_argument("action", choices=("status", "download", "build"))
     for name in ("read", "toc", "examples"):
         command = sub.add_parser(name)
         command.add_argument("path", help="相对于文档根目录的路径")
@@ -89,7 +92,7 @@ def main(argv: list[str] | None = None) -> int:
                     "fts5": True,
                     "optional_packages": {
                         name: importlib.util.find_spec(name) is not None
-                        for name in ("PySide6", "win32com", "httpx")
+                        for name in ("PySide6", "win32com", "httpx", "onnxruntime", "tokenizers")
                     },
                 }
             )
@@ -161,6 +164,29 @@ def main(argv: list[str] | None = None) -> int:
                         )
                     ]
                 )
+        elif args.command == "semantic":
+            from catia_manual.core.embedding import (
+                FINGERPRINT,
+                download_model,
+                make_embedder,
+                model_status,
+            )
+            from catia_manual.core.semantic import PASSAGE_VERSION, SemanticIndex
+
+            if args.action == "download":
+                emit(download_model(settings.search["model_dir"]))
+            else:
+                with ManualIndex(settings.database, settings.root) as repository:
+                    service = SemanticIndex(repository)
+                    if args.action == "build":
+                        emit(service.build(make_embedder(settings.search)))
+                    else:
+                        emit(
+                            {
+                                "model": model_status(settings.search["model_dir"]),
+                                "index": service.status(FINGERPRINT + ":" + PASSAGE_VERSION),
+                            }
+                        )
         elif args.command == "toc":
             emit([asdict(item) for item in manual.toc(args.path)])
         elif args.command == "examples":
@@ -199,7 +225,10 @@ def main(argv: list[str] | None = None) -> int:
                         if args.category
                         else None
                     )
-                    response = SearchService(repository, settings.translation).search(
+                    config = {**settings.search}
+                    if args.mode:
+                        config["mode"] = args.mode
+                    response = SearchService(repository, settings.translation, config).search(
                         args.query, args.module, args.limit, modules=modules
                     )
                     emit(

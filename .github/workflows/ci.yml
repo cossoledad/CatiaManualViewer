@@ -53,7 +53,7 @@ jobs:
             python scripts/release.py metadata
           }
       - name: Install build dependencies
-        run: python -m pip install -c packaging/constraints-ci.txt -e ".[gui,catia,translation,offline,packaging]"
+        run: python -m pip install -c packaging/constraints-ci.txt -e ".[gui,catia,translation,offline,search,packaging]"
       - name: Cache pinned offline models
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         with:

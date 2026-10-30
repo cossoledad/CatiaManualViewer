@@ -30,6 +30,7 @@ def application_excludes(database, root):
             database,
             database.with_name(database.name + "-wal"),
             database.with_name(database.name + "-shm"),
+            database.with_name(database.name + ".semantic-lock"),
             database.parent / "rendered",
             database.parent / "backups",
         )

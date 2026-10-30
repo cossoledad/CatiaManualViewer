@@ -40,3 +40,7 @@ show_tools = true
 remember_window = true
 window_width = 1480
 window_height = 940
+[search]
+mode = 'keyword'
+model_dir = 'data/search-models/e5-small'
+threads = 2

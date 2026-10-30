@@ -13,7 +13,16 @@ def verify_runtime(settings: Settings, output: Path) -> int:
     from catia_manual.gui.style import ASSETS
 
     checks = {}
-    for name in ("httpx", "pythoncom", "win32com.client", "ctranslate2", "sentencepiece"):
+    for name in (
+        "httpx",
+        "pythoncom",
+        "win32com.client",
+        "ctranslate2",
+        "sentencepiece",
+        "onnxruntime",
+        "tokenizers",
+        "numpy",
+    ):
         try:
             importlib.import_module(name)
             checks[name] = True

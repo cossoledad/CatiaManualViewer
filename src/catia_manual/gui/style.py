@@ -69,6 +69,9 @@ QComboBox::drop-down {border:0;width:24px;}
 QComboBox {padding-right:30px;}
 QPushButton {background:white;border:1px solid #dce5ed;border-radius:7px;padding:7px 12px;}
 QPushButton:hover {background:#edf5f6;border-color:#b9d6d8;}
+QPushButton:disabled {color:#a3afba;background:#f4f7fa;border-color:#e3e9ef;}
+QProgressBar {border:1px solid #dce5ed;border-radius:5px;text-align:center;background:white;}
+QProgressBar::chunk {background:#539d9d;border-radius:4px;}
 QPushButton#primary {background:#1b777a;border-color:#1b777a;color:white;font-weight:600;}
 QPushButton#primary:hover {background:#14666a;}
 QToolButton {background:transparent;border:0;border-radius:6px;padding:7px;}

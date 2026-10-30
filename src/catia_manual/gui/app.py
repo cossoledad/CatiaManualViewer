@@ -2,6 +2,7 @@ import argparse
 import hashlib
 import json
 import sys
+import threading
 from collections import OrderedDict
 from dataclasses import replace
 from pathlib import Path
@@ -286,6 +287,17 @@ class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
         from catia_manual.gui.library import TermsDialog
 
         dialog = TermsDialog(self)
+        dialog.exec()
+        dialog.deleteLater()
+
+    def manage_semantic(self):
+        from catia_manual.gui.semantic import SemanticDialog
+
+        if self.index_running:
+            self.show_error("请等待文档索引完成后再建立语义索引")
+            return
+        self.flush_preferences()
+        dialog = SemanticDialog(self)
         dialog.exec()
         dialog.deleteLater()
 
@@ -665,6 +677,10 @@ class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
         query = self.query.text().strip()
         if not query:
             return
+        previous = getattr(self, "search_cancel", None)
+        if previous is not None:
+            previous.set()
+        cancel = self.search_cancel = threading.Event()
         modules = self.scope_modules()
         settings = self.settings
         scope_label = self.module.currentText().strip()
@@ -674,8 +690,8 @@ class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
 
         def work(_):
             with ManualIndex(settings.database, settings.root) as index:
-                response = SearchService(index, settings.translation).search(
-                    query, limit=80, modules=modules
+                response = SearchService(index, settings.translation, settings.search).search(
+                    query, limit=80, modules=modules, cancel=cancel
                 )
                 return response, index.connection.execute(
                     "SELECT count(*) FROM documents"
@@ -705,8 +721,11 @@ class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
                 self.results.addItem(item)
                 self.statusBar().publish("search", "此文档尚未建立索引", record=True)
                 return
-            summary = f"{scope_label} · {len(response.hits)} 个结果"
-            self.query.setToolTip(response.plan.expanded)
+            label = {"keyword": "关键词", "hybrid": "混合", "semantic": "语义"}.get(
+                settings.search.get("mode", "keyword"), "关键词"
+            )
+            summary = f"{label} · {scope_label} · {len(response.hits)} 个结果"
+            self.query.setToolTip(response.plan.expanded or query)
             notes = [note for note in response.plan.notes if note != "中文术语映射到英文原文"]
             if notes:
                 summary += " · " + "；".join(notes)
@@ -920,6 +939,8 @@ class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
             self.show_error(str(exc))
 
     def apply_settings(self, settings):
+        if getattr(self, "search_cancel", None) is not None:
+            self.search_cancel.set()
         library_changed = (
             settings.root != self.settings.root or settings.database != self.settings.database
         )
@@ -962,6 +983,10 @@ class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
         self.statusBar().showMessage("设置已保存", 2000)
 
     def closeEvent(self, event):
+        if getattr(self, "search_cancel", None) is not None:
+            self.search_cancel.set()
+        if getattr(self, "semantic_cancel", None) is not None:
+            self.semantic_cancel.set()
         self.page_pump.stop()
         self.position_timer.stop()
         self.flush_reading_locations()

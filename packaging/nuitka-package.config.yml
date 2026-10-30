@@ -7,3 +7,10 @@
           - 'libiomp5md'
           - 'cudnn64_9'
       when: 'win32'
+- module-name: 'onnxruntime'
+  dlls:
+    - from_filenames:
+        relative_path: 'capi'
+        prefixes:
+          - 'onnxruntime'
+      when: 'win32'

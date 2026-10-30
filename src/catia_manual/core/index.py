@@ -416,6 +416,7 @@ class ManualIndex:
                     source.to_dict(),
                     heading,
                     reason,
+                    signals={"title_terms": row["hit_title"].count("⟦")},
                 )
             )
         return hits

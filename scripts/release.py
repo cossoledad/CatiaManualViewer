@@ -113,6 +113,7 @@ def verify_archive(archive: Path, version: str):
             "documentation": ("root", "database"),
             "catia": ("launcher", "environment_dir"),
             "translation": ("model_dir",),
+            "search": ("model_dir",),
         }.items():
             if any(ntpath.isabs(defaults[section][key]) for key in keys):
                 raise ValueError("发行默认配置包含机器绝对路径")

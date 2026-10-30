@@ -58,3 +58,5 @@ reader_locations 持久化来源位置，term_aliases 保存用户别名；重�
 B 轮数据库升级前保留 schema 1 一致性备份。导出及副本挂载使用 SQLite backup API，包含已提交 WAL；目标必须是新文件。挂载只修改新副本的 root，原数据库保留原绑定。完整清单相同保留库 UUID；明确接受的同库修订保留 UUID，但将 manifest_verified 设为 false，等待完整更新。
 
 当前分别记录 parser_version、chunk_version、catalog_hash 与 terminology_version；来源协议版本为 1，索引 schema 为 2。内置术语版本也在 stats 输出中提供，更新术语只影响查询展开。离线翻译 provider 身份使用模型内容修订，不再使用模型安装路径，旧缓存升级时保留并迁移。未来引入 Embedding 时再记录模型、维度与向量 schema；本轮没有向量索引或模型推理检索。
+
+C 轮已实现独立向量扩展，见 [混合检索](stage-c.md)：semantic_schema_version=1，模型规格、384 维预设、float32-le、余弦距离、分段版本和语料签名显式记录。向量结果使用同一 SourceLocation，增加 channels、semantic_score、signals；目录搬迁不改变模型内容指纹。上段“不含向量索引”描述的是 B 轮交付范围。

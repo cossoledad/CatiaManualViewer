@@ -46,6 +46,9 @@ class SearchHit:
     source: dict | None = None
     heading_path: list[str] = field(default_factory=list)
     reason: str = "正文关键词匹配"
+    channels: list[str] = field(default_factory=lambda: ["keyword"])
+    semantic_score: float | None = None
+    signals: dict[str, int] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
