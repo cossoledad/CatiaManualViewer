@@ -340,9 +340,30 @@ class ManualIndex:
         report.update(
             library_id=self.library_id, manifest_verified=self.meta("manifest_verified") == "1"
         )
+        if not report["errors"]:
+            from catia_manual.core.structure import StructureIndex
+
+            result = StructureIndex(self).build(progress)
+            report["structure"] = result
+            report["errors"].extend(result["errors"])
         return report
 
     def search(self, query, module=None, limit=30, *, match=None, modules=None, paths=None):
+        from catia_manual.core.structure import StructureIndex
+
+        structure = StructureIndex(self)
+        if structure.ready():
+            if match is None:
+                plan = plan_query(query, self.aliases(modules or ([module] if module else None)))
+                match = "" if plan.unknown else plan.match
+            if not match or modules == [] or modules == ():
+                return []
+            return structure.search(
+                query, match, modules=modules, module=module, paths=paths, limit=limit
+            )
+        return self.search_chunks(query, module, limit, match=match, modules=modules, paths=paths)
+
+    def search_chunks(self, query, module=None, limit=30, *, match=None, modules=None, paths=None):
         if match is None:
             plan = plan_query(query, self.aliases(modules or ([module] if module else None)))
             match = "" if plan.unknown else plan.match
@@ -353,9 +374,11 @@ class ManualIndex:
             filters.append("d.module=?")
             params.append(module)
         if modules is not None:
-            chosen = list(dict.fromkeys(modules))
-            filters.append("d.module IN (" + ",".join("?" for _ in chosen) + ")")
-            params.extend(chosen)
+            from catia_manual.core.scopes import scope_sql
+
+            clause, values = scope_sql(self.connection, modules)
+            filters.append(clause)
+            params.extend(values)
         if paths is not None:
             if not paths:
                 return []
@@ -429,12 +452,22 @@ class ManualIndex:
             "WHERE documents_fts MATCH ? AND d.kind='article'"
         )
         params = [match]
+        from catia_manual.core.structure import StructureIndex
+
+        if StructureIndex(self).ready():
+            sql += (
+                " AND EXISTS(SELECT 1 FROM article_metadata m "
+                "WHERE m.path=d.path AND m.role<>'index')"
+            )
         if module:
             sql += " AND d.module=?"
             params.append(module)
         if modules is not None:
-            sql += " AND d.module IN (" + ",".join("?" for _ in modules) + ")"
-            params.extend(modules)
+            from catia_manual.core.scopes import scope_sql
+
+            clause, values = scope_sql(self.connection, modules)
+            sql += " AND " + clause
+            params.extend(values)
         sql += " ORDER BY bm25(documents_fts,8.0,1.0),d.path LIMIT ?"
         params.append(max(1, min(limit, 200)))
         return [r[0] for r in self.connection.execute(sql, params)]

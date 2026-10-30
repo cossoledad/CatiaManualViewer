@@ -204,6 +204,30 @@ class WorkspaceUI:
         nav.addWidget(self.page_title, 1)
         self.add_page_controls(nav)
         center.addLayout(nav)
+        breadcrumbs = QHBoxLayout()
+        self.return_results = QToolButton()
+        self.return_results.setText("返回搜索结果")
+        self.return_results.clicked.connect(lambda: self.tabs.setCurrentWidget(self.results))
+        self.return_results.hide()
+        breadcrumbs.addWidget(self.return_results)
+        self.breadcrumb = QLabel()
+        self.breadcrumb.setTextFormat(Qt.TextFormat.RichText)
+        self.breadcrumb.setTextInteractionFlags(Qt.TextInteractionFlag.LinksAccessibleByMouse)
+        self.breadcrumb.linkActivated.connect(self.breadcrumb_clicked)
+        self.breadcrumb.setMinimumWidth(0)
+        breadcrumbs.addWidget(self.breadcrumb, 1)
+        self.reference_reading = QToolButton()
+        self.reference_reading.setText("参考说明")
+        self.reference_reading.setToolTip("查看当前文章引用的参考说明")
+        self.reference_reading.clicked.connect(self.open_reference_reading)
+        self.reference_reading.hide()
+        breadcrumbs.addWidget(self.reference_reading)
+        self.other_positions = QToolButton()
+        self.other_positions.setText("其他位置")
+        self.other_positions.clicked.connect(self.choose_other_position)
+        self.other_positions.hide()
+        breadcrumbs.addWidget(self.other_positions)
+        center.addLayout(breadcrumbs)
         self.center_stack = QStackedWidget()
         self.home_scroll = QScrollArea()
         self.home_scroll.setWidgetResizable(True)
@@ -334,9 +358,9 @@ class WorkspaceUI:
     def scope_modules(self):
         scope = self.module.currentData() or {"kind": "all"}
         if scope["kind"] == "category":
-            return self.catalog.category(scope["id"]).modules
+            return self.catalog.scope([m.id for m in self.catalog.category(scope["id"]).manuals])
         if scope["kind"] == "manual":
-            return self.catalog.manuals[scope["id"]].search_modules
+            return self.catalog.scope([scope["id"]])
         return None
 
     def save_location_scroll(self):
@@ -358,6 +382,10 @@ class WorkspaceUI:
         self.requested_history_position = None
         self.invalidate_translation()
         self.center_stack.setCurrentWidget(self.home_scroll)
+        self.breadcrumb.clear()
+        self.other_positions.hide()
+        self.pending_navigation = None
+        self.reference_reading.hide()
         self.web.reveal()
         self.details_pane.setVisible(self.settings.appearance.get("show_tools", True))
         self.samples.clear()

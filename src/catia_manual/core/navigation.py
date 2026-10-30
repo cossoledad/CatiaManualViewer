@@ -10,6 +10,7 @@ class Location:
     y: float = 0
     reading_anchor: dict | None = None
     source: dict | None = None
+    placement: dict | None = None
 
 
 class NavigationHistory:
@@ -34,7 +35,15 @@ class NavigationHistory:
 
     def visit(self, location: Location) -> None:
         current = self.current
-        if current and (current.path, current.fragment) == (location.path, location.fragment):
+
+        def context(entry):
+            return ((entry.placement or {}).get("manual"), (entry.placement or {}).get("id"))
+
+        if current and (current.path, current.fragment, context(current)) == (
+            location.path,
+            location.fragment,
+            context(location),
+        ):
             return
         del self.entries[self.position + 1 :]
         self.entries.append(location)

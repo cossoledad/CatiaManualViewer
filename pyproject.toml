@@ -26,7 +26,7 @@ catia-doc = "catia_manual.cli:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-catia_manual = ["assets/*.svg", "assets/*.png", "assets/*.ico", "assets/*.js"]
+catia_manual = ["assets/*.svg", "assets/*.png", "assets/*.ico", "assets/*.js", "assets/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

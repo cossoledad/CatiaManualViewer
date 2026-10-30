@@ -60,6 +60,8 @@ GitHub Actions 的构建和发布入口、权限与首次标签步骤见 [CI 与
 
 JSON CLI 和 `core` 不依赖 Qt。调用时使用参数列表，并以 UTF-8 读取 stdout。`open <示例路径>` 默认仅给出启动参数，加 `--execute` 才实际打开。GUI 开发入口支持 `--open <本地文档路径或可映射的文档 URL>`。
 
+目录结构、双语命令词库的开发机提取、真实库校准和新增 CLI 见 [结构化搜索](structured-search.md)。`search --manual` 与 `--category` 包含显式收录的共享页面，`--module` 保留物理目录语义；`locations` 返回同一文章的多个功能目录位置。词库 JSON 已提交并随包分发，构建和运行不访问开发机安装目录。
+
 ## 验证
 
 ```powershell

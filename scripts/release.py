@@ -85,6 +85,7 @@ def verify_archive(archive: Path, version: str):
             "dependencies.json",
             "catia_manual/assets/reader_translation.js",
             "catia_manual/assets/reader_resources.js",
+            "catia_manual/assets/command_terms.json",
             "data/models/manifest.json",
         )
         for name in required:

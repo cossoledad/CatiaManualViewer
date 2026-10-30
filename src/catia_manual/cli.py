@@ -43,6 +43,11 @@ def main(argv: list[str] | None = None) -> int:
     search.add_argument("--mode", choices=("keyword", "hybrid", "semantic"))
     semantic = sub.add_parser("semantic", help="本机语义模型与增量向量索引")
     semantic.add_argument("action", choices=("status", "download", "build"))
+    sub.add_parser("structure", help="增量整理目录、双语命令和文章搜索结构")
+    locations = sub.add_parser("locations", help="读取文章在各手册中的目录位置")
+    locations.add_argument("path")
+    locations.add_argument("--manual")
+    search.add_argument("--manual", help="按功能手册范围搜索，包括显式收录的共享页面")
     for name in ("read", "toc", "examples"):
         command = sub.add_parser(name)
         command.add_argument("path", help="相对于文档根目录的路径")
@@ -152,6 +157,17 @@ def main(argv: list[str] | None = None) -> int:
             location = SourceLocation.from_dict(json.loads(args.location.read_text("utf-8")))
             with ManualIndex(settings.database, settings.root) as repository:
                 emit(resolve_source(manual, location, repository.library_id).to_dict())
+        elif args.command in {"structure", "locations"}:
+            from catia_manual.core.structure import StructureIndex
+
+            with ManualIndex(settings.database, settings.root) as repository:
+                service = StructureIndex(repository)
+                if args.command == "structure":
+                    emit(service.build(backup=True))
+                elif service.ready():
+                    emit(service.placements(args.path, [args.manual] if args.manual else []))
+                else:
+                    raise ValueError("请先整理搜索结构或更新索引")
         elif args.command == "terms":
             with ManualIndex(settings.database, settings.root) as repository:
                 if args.alias:
@@ -220,11 +236,22 @@ def main(argv: list[str] | None = None) -> int:
                     emit(result)
                     return 1 if result["errors"] else 0
                 elif args.command == "search":
+                    if args.manual and args.category:
+                        raise ValueError("manual 和 category 只能指定一种功能范围")
                     modules = (
-                        ManualCatalog(settings.root).category(args.category).modules
+                        ManualCatalog(settings.root).scope(
+                            [
+                                manual.id
+                                for manual in ManualCatalog(settings.root)
+                                .category(args.category)
+                                .manuals
+                            ]
+                        )
                         if args.category
                         else None
                     )
+                    if args.manual:
+                        modules = ManualCatalog(settings.root).scope([args.manual])
                     config = {**settings.search}
                     if args.mode:
                         config["mode"] = args.mode

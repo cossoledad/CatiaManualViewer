@@ -49,6 +49,10 @@ class SearchHit:
     channels: list[str] = field(default_factory=lambda: ["keyword"])
     semantic_score: float | None = None
     signals: dict[str, int] = field(default_factory=dict)
+    placement: dict | None = None
+    page_role: str = ""
+    title_zh: str = ""
+    related: list[dict] = field(default_factory=list)
 
 
 @dataclass(frozen=True)

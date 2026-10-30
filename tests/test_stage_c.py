@@ -145,9 +145,7 @@ def test_unavailable_model_falls_back_without_loading_qt(corpus, monkeypatch):
         embedding, "make_embedder", lambda _: (_ for _ in ()).throw(ValueError("missing model"))
     )
     with built(corpus) as index:
-        response = SearchService(index, {"provider": "glossary"}, {"mode": "hybrid"}).search(
-            "Pocket"
-        )
+        response = SearchService(index, {"provider": "glossary"}, {"mode": "hybrid"}).search("pock")
         assert response.hits[0].title == "Pocket"
         assert "missing model" in response.plan.notes[-1]
 

@@ -276,8 +276,11 @@ class SemanticIndex:
             return [], status
         parameters, where = [model], "p.model=?"
         if modules is not None:
-            where += " AND d.module IN (" + ",".join("?" for _ in modules) + ")"
-            parameters.extend(modules)
+            from catia_manual.core.scopes import scope_sql
+
+            clause, values = scope_sql(self.connection, modules)
+            where += " AND " + clause
+            parameters.extend(values)
         cursor = self.connection.execute(
             "SELECT p.*,d.title,d.module FROM semantic_passages p JOIN documents d ON "
             "d.path=p.path AND d.content_hash=p.content_hash WHERE " + where,
@@ -364,5 +367,14 @@ def fuse(keyword, semantic, limit):
             reason=entries[path].reason
             + (" · 关键词与语义共同命中" if len(channels[path]) > 1 else ""),
         )
-        for path in sorted(entries, key=lambda p: (-scores[p], p))[:limit]
+        for path in sorted(
+            entries,
+            key=lambda p: (
+                entries[p].signals.get("rank_tier", 9)
+                if entries[p].signals.get("rank_tier", 9) <= 3
+                else 9,
+                -scores[p],
+                p,
+            ),
+        )[:limit]
     ]

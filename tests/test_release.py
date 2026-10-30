@@ -19,6 +19,9 @@ def make_archive(folder, **extra):
         "dependencies.json": "[]",
         "catia_manual/assets/reader_translation.js": "// fixture",
         "catia_manual/assets/reader_resources.js": "// fixture",
+        "catia_manual/assets/command_terms.json": (
+            release.PROJECT / "src/catia_manual/assets/command_terms.json"
+        ).read_bytes(),
         "data/models/manifest.json": (release.PROJECT / "packaging/models.lock.json").read_bytes(),
     }
     for pair in ("en_zh", "zh_en"):

@@ -209,3 +209,11 @@ class ManualCatalog:
             if identity in {group.id, group.title, group.label}:
                 return group
         raise ValueError(f"未知功能分类：{identity}")
+
+    def scope(self, manuals):
+        from catia_manual.core.scopes import FunctionalScope
+
+        return FunctionalScope(
+            [module for identity in manuals for module in self.manuals[identity].search_modules],
+            manuals,
+        )

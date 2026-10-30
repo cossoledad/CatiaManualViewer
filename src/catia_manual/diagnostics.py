@@ -13,6 +13,12 @@ def verify_runtime(settings: Settings, output: Path) -> int:
     from catia_manual.gui.style import ASSETS
 
     checks = {}
+    try:
+        from catia_manual.core.terminology import vocabulary
+
+        checks["command_vocabulary"] = bool(vocabulary()["commands"])
+    except Exception as exc:
+        checks["command_vocabulary"] = str(exc)
     for name in (
         "httpx",
         "pythoncom",

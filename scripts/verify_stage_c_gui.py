@@ -177,7 +177,7 @@ try:
         window.settings,
         search={**window.settings.search, "model_dir": str(folder / "missing-model")},
     )
-    window.query.setText("Creating Pockets")
+    window.query.setText("pocket")
     window.search()
     wait(lambda: not window.jobs)
     check(

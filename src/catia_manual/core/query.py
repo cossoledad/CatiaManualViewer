@@ -1,8 +1,10 @@
 import re
 from dataclasses import dataclass, field
 
+from catia_manual.core.terminology import aliases as bundled_aliases
+
 CJK = re.compile(r"[\u3400-\u9fff]")
-TERMINOLOGY_VERSION = "cad-terms-2"
+TERMINOLOGY_VERSION = "cad-terms-3"
 # Alternatives within one concept use OR; separate concepts use AND.
 TERMS = {
     "凸起": ("pad", "extrude"),
@@ -167,7 +169,7 @@ def plan_query(query: str, aliases=None) -> QueryPlan:
         return QueryPlan(query, " AND ".join(groups), " ".join(tokens), groups=groups)
     remaining = query
     groups, expanded = [], []
-    terms = {**TERMS, **(aliases or {})}
+    terms = {**bundled_aliases(), **TERMS, **(aliases or {})}
     for chinese in sorted(terms, key=len, reverse=True):
         if chinese not in remaining:
             continue

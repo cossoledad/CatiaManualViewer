@@ -25,6 +25,7 @@ from catia_manual.config import save_settings
 from catia_manual.core.index import ManualIndex
 from catia_manual.core.library import attach_copy, snapshot, verify_copy
 from catia_manual.core.query import TERMS
+from catia_manual.core.terminology import aliases as bundled_aliases
 
 
 class LibraryDialog(QDialog):
@@ -235,6 +236,11 @@ class TermsDialog(QDialog):
         self.setWindowTitle("术语与别名 · Catia Manual Viewer")
         self.resize(700, 600)
         layout = QVBoxLayout(self)
+        self.filter = QLineEdit()
+        self.filter.setPlaceholderText("筛选中文、英文或来源")
+        self.filter.setClearButtonEnabled(True)
+        self.filter.textChanged.connect(self.filter_rows)
+        layout.addWidget(self.filter)
         self.table = QTableWidget(0, 4)
         self.table.setHorizontalHeaderLabels(["别名", "英文关键词", "范围", "来源"])
         self.table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
@@ -295,6 +301,11 @@ class TermsDialog(QDialog):
     def populate(self, users):
         self.table.setRowCount(0)
         rows = [(alias, " | ".join(english), "", "内置") for alias, english in TERMS.items()]
+        rows += [
+            (alias, " | ".join(english), "", "随包命令词库")
+            for alias, english in bundled_aliases().items()
+            if alias not in TERMS
+        ]
         rows += [(row["alias"], row["english"], row["module"], "用户") for row in users]
         for alias, english, scope, origin in sorted(rows):
             row = self.table.rowCount()
@@ -302,9 +313,16 @@ class TermsDialog(QDialog):
             for column, value in enumerate((alias, english, scope or "全部", origin)):
                 self.table.setItem(row, column, QTableWidgetItem(value))
         self.table.resizeColumnsToContents()
+        self.filter_rows()
         self.note.setText(
             "用户别名实时用于查询展开，不需重建索引。限定范围也适用于包含该手册的分类。"
         )
+
+    def filter_rows(self):
+        text = self.filter.text().strip().casefold()
+        for row in range(self.table.rowCount()):
+            content = " ".join(self.table.item(row, column).text() for column in range(4))
+            self.table.setRowHidden(row, text not in content.casefold())
 
     def selected(self):
         row = self.table.currentRow()

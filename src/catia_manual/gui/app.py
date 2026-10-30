@@ -50,6 +50,7 @@ from catia_manual.core.search import SearchService
 from catia_manual.core.source import resolve_source
 from catia_manual.core.translation import TranslationService, make_provider
 from catia_manual.gui.page_reader import PageReader
+from catia_manual.gui.reading_navigation import ReadingNavigation
 from catia_manual.gui.resource_actions import ResourceActions, ResourceBridge
 from catia_manual.gui.settings import GlobalSettings
 from catia_manual.gui.status import StatusCenter
@@ -114,7 +115,7 @@ class ReaderPage(QWebEnginePage):
         return True
 
 
-class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
+class MainWindow(ReadingNavigation, ResourceActions, PageReader, WorkspaceUI, QMainWindow):
     def __init__(self, settings: Settings, initial_target: str | None = None):
         super().__init__()
         self.settings = settings
@@ -151,6 +152,7 @@ class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
         self.build_interface()
         self.refresh_capabilities(probe=True)
         self.update_history_actions()
+        QTimer.singleShot(400, self.upgrade_search_structure)
         if initial_target:
             QTimer.singleShot(0, lambda: self.open_target(initial_target))
         else:
@@ -256,8 +258,11 @@ class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
         if not data:
             return
         if "path" in data:
-            self.set_scope("manual", data["manual"])
-            self.open_document(data["path"], data.get("fragment", ""))
+            self.open_document(
+                data["path"],
+                data.get("fragment", ""),
+                placement=data.get("placement", {"manual": data["manual"]}),
+            )
         elif "module" in data:
             self.open_manual(data["module"])
         elif "category" in data:
@@ -269,10 +274,11 @@ class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
             self.build_index()
             return
         source = item.data(Qt.ItemDataRole.UserRole + 1)
+        placement = item.data(Qt.ItemDataRole.UserRole + 2)
         if source:
-            self.open_source(source)
+            self.open_source(source, placement=placement)
         else:
-            self.open_document(item.data(Qt.ItemDataRole.UserRole))
+            self.open_document(item.data(Qt.ItemDataRole.UserRole), placement=placement)
 
     def manage_library(self):
         from catia_manual.gui.library import LibraryDialog
@@ -301,7 +307,9 @@ class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
         dialog.exec()
         dialog.deleteLater()
 
-    def open_source(self, value, history_index=None):
+    def open_source(self, value, history_index=None, placement=None):
+        if history_index is not None:
+            placement = self.history.entries[history_index].placement
         try:
             source = SourceLocation.from_dict(value)
         except (ValueError, TypeError, KeyError) as exc:
@@ -345,6 +353,7 @@ class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
                 result.source.fragment,
                 history_index=history_index,
                 source_location=result.source.to_dict(),
+                placement=placement,
             )
             if result.status.startswith("relocated"):
                 self.statusBar().showMessage("原文已修订，已重新定位来源", 4000)
@@ -358,11 +367,18 @@ class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
         remember: bool = True,
         history_index: int | None = None,
         source_location: dict | None = None,
+        placement: dict | None = None,
     ):
         self.statusBar().clear_source("source")
         self.save_location_scroll()
         self.detach_reading_page()
         parser, render_cache = self.parser, self.render_cache
+        settings = self.settings
+        preferred = placement or (
+            self.history.entries[history_index].placement if history_index is not None else None
+        )
+        if preferred is None and self.history.current:
+            preferred = self.history.current.placement
         self.navigation_generation += 1
         generation = self.navigation_generation
         self.page_loading = True
@@ -378,7 +394,7 @@ class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
             key = (str(source), hashlib.sha256(source.read_bytes()).hexdigest())
             cached_result = self.document_cache.get(key)
             if cached_result is not None and cached_result[1].path == relative:
-                return cached_result
+                return (*cached_result[:4], self.navigation_data(settings, relative, preferred))
             document = parser.parse(relative)
             visited = {document.path}
             while document.kind == "frameset":
@@ -410,12 +426,18 @@ class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
             reading_page = parser.render_page(document.path)
             temporary.write_text(reading_page.html, encoding="utf-8")
             temporary.replace(cached)
-            return key, document, cached, reading_page
+            return (
+                key,
+                document,
+                cached,
+                reading_page,
+                self.navigation_data(settings, document.path, preferred),
+            )
 
         def prepared(result):
             if generation != self.navigation_generation:
                 return
-            key, document, cached, reading_page = result
+            key, document, cached, reading_page, self.pending_navigation = result
             self.reading_page = reading_page
             self.reading_fragment = fragment
             self.pending_reading_restore = None
@@ -439,7 +461,15 @@ class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
                 self.pending_reading_restore = location.reading_anchor
             else:
                 if remember:
-                    self.history.visit(Location(document.path, fragment, document.title))
+                    selected = (
+                        self.pending_navigation["selected"]
+                        or {"manual": self.pending_navigation["manual"]}
+                        if self.pending_navigation
+                        else preferred
+                    )
+                    self.history.visit(
+                        Location(document.path, fragment, document.title, placement=selected)
+                    )
                 self.pending_restore = None
             if source_location:
                 self.pending_reading_restore = {
@@ -477,6 +507,7 @@ class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
                 self.page_loading = False
                 self.attach_reading_page(self.pending_reading_restore, fragment)
                 self.statusBar().clear_source("navigation")
+                self.apply_reading_navigation()
                 return
             base = QUrl.fromLocalFile(str(cached))
             if fragment:
@@ -544,6 +575,7 @@ class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
                 self.center_stack.setCurrentWidget(self.web)
                 self.web.reveal()
                 self.statusBar().clear_source("navigation")
+                self.apply_reading_navigation()
 
         QTimer.singleShot(40, reveal)
 
@@ -704,14 +736,24 @@ class MainWindow(ResourceActions, PageReader, WorkspaceUI, QMainWindow):
             self.results.clear()
             for hit in response.hits:
                 manual = self.catalog.manuals.get(hit.module)
+                if hit.placement:
+                    manual = self.catalog.manuals.get(hit.placement["manual"], manual)
                 label = manual.label if manual else "参考文档"
+                from catia_manual.core.structure import ROLE_LABELS
+
+                label += " · " + ROLE_LABELS.get(hit.page_role, "正文")
                 preview = " ".join(hit.snippet.split())[:170]
-                heading = " / ".join(hit.heading_path[1:])
+                trail = hit.placement["trail"] if hit.placement else hit.heading_path
+                heading = " / ".join(trail[1:])
                 item = QListWidgetItem(
-                    f"{hit.title}\n{label}" + (" · " + heading if heading else "") + f"\n{preview}"
+                    (f"{hit.title_zh} / {hit.title}" if hit.title_zh else hit.title)
+                    + f"\n{label}"
+                    + (" · " + heading if heading else "")
+                    + f"\n{preview}"
                 )
                 item.setData(Qt.ItemDataRole.UserRole, hit.path)
                 item.setData(Qt.ItemDataRole.UserRole + 1, hit.source)
+                item.setData(Qt.ItemDataRole.UserRole + 2, hit.placement)
                 item.setToolTip(hit.reason + "\n" + hit.path)
                 self.results.addItem(item)
             self.tabs.setCurrentWidget(self.results)

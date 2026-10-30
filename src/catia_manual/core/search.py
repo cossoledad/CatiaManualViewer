@@ -31,11 +31,16 @@ class SearchService:
         mode = self.search_config.get("mode", "keyword")
         if mode not in {"keyword", "hybrid", "semantic"}:
             raise ValueError("未知搜索模式")
+        if cancel is not None and cancel.is_set():
+            return SearchResponse([], plan_query(query))
+        from catia_manual.core.structure import StructureIndex
+
+        structured = StructureIndex(self.index).ready()
         if modules is not None and not modules:
             return SearchResponse([], plan_query(query))
         response = (
             SearchResponse([], plan_query(query))
-            if mode == "semantic"
+            if mode == "semantic" and not structured
             else self.keyword_search(
                 query,
                 module,
@@ -47,6 +52,12 @@ class SearchService:
         )
         if mode == "keyword" or not query.strip():
             return response
+        if response.hits and response.hits[0].signals.get("rank_tier", 9) <= 1:
+            response.hits = response.hits[:limit]
+            response.plan.method += "+structured"
+            return response
+        if mode == "semantic":
+            response.hits = []
         try:
             from catia_manual.core.embedding import make_embedder
             from catia_manual.core.semantic import SemanticIndex, fuse
@@ -114,6 +125,9 @@ class SearchService:
             if plan.unknown
             else self.index.search(query, module, limit, match=plan.match, modules=modules)
         )
+        if any(hit.signals.get("cross_section") for hit in hits):
+            plan.method += "+cross-section"
+            plan.notes.append("全部关键词在文章内命中，打开最相关章节")
         if plan.unknown and partial and plan.match:
             hits = [
                 replace(hit, reason="已识别术语匹配（部分词语未展开） · " + hit.reason)
