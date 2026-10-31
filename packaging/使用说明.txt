@@ -24,4 +24,7 @@ Catia Manual Viewer
 密钥不导出，在新电脑补填；CATIA 沿用目标电脑配置。
 
 config.local.toml 保存个人设置；data 默认保存索引和缓存。不要仅复制 EXE。
+“更多 → Agent 接入”可启动本机或局域网只读 MCP 服务，默认复制 Codex 配置即可连接。
+默认无需令牌或环境变量；可按需勾选“使用访问令牌”。旧 Codex 配置需删除 bearer_token_env_var。
+先完成文档索引；关闭软件将停止服务。令牌和 Agent 配置不包含在迁移包中。
 更多 → 关于，可查看程序版本与文档库信息。

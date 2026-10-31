@@ -2,6 +2,7 @@
 
 import argparse
 import importlib.metadata
+import importlib.util
 import json
 import os
 import shutil
@@ -11,6 +12,19 @@ import tomllib
 from pathlib import Path
 
 PROJECT = Path(__file__).resolve().parents[1]
+
+
+def include_msvc_runtime(release: Path):
+    # MinGW builds still ship Qt, whose C++ runtime may be installed only in
+    # System32 and consequently excluded by Nuitka's system-DLL filter.
+    system = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
+    for name in ("msvcp140.dll", "msvcp140_1.dll"):
+        target = release / name
+        if not target.is_file():
+            source = system / name
+            if not source.is_file():
+                raise RuntimeError("Install the Microsoft Visual C++ x64 Redistributable: " + name)
+            shutil.copy2(source, target)
 
 
 def main():
@@ -25,6 +39,8 @@ def main():
     args = parser.parse_args()
     if sys.platform != "win32":
         parser.error("Windows portable releases must be built on Windows")
+    if importlib.util.find_spec("mcp") is None:
+        parser.error("Install the agent extra before building: pip install -e .[agent,packaging]")
     if args.compiler == "mingw64" and sys.version_info[:2] != (3, 12):
         parser.error("Use Python 3.12 for MinGW64, or select --compiler msvc")
     version = tomllib.loads((PROJECT / "pyproject.toml").read_text("utf-8"))["project"]["version"]
@@ -59,6 +75,10 @@ def main():
         "--file-description=CATIA V5 local documentation viewer",
         "--include-package=catia_manual",
         "--include-package-data=catia_manual",
+        "--include-distribution-metadata=mcp",
+        "--include-module=uvicorn.loops.asyncio",
+        "--include-module=uvicorn.protocols.http.h11_impl",
+        "--include-module=uvicorn.lifespan.on",
         "--user-package-configuration-file=" + str(PROJECT / "packaging/nuitka-package.config.yml"),
         "--nofollow-import-to=catia_manual.cli",
         "--nofollow-import-to=pytest",
@@ -75,6 +95,7 @@ def main():
     subprocess.run(command, cwd=PROJECT, env=env, check=True)
     # copytree refuses an existing destination; a build never overwrites a user's portable data.
     shutil.copytree(work / "portable_entry.dist", release)
+    include_msvc_runtime(release)
     defaults = (PROJECT / "packaging/config.default.toml").read_text("utf-8")
     if models:
         shutil.copytree(models, release / "data/models")
@@ -107,6 +128,28 @@ def main():
         "shiboken6",
         "pywin32",
         "httpx",
+        "mcp",
+        "starlette",
+        "uvicorn",
+        "pydantic",
+        "pydantic_core",
+        "pydantic-settings",
+        "jsonschema",
+        "jsonschema-specifications",
+        "referencing",
+        "rpds-py",
+        "attrs",
+        "annotated-types",
+        "typing-inspection",
+        "httpx-sse",
+        "sse-starlette",
+        "python-multipart",
+        "python-dotenv",
+        "PyJWT",
+        "cryptography",
+        "cffi",
+        "pycparser",
+        "click",
         "httpcore",
         "h11",
         "anyio",

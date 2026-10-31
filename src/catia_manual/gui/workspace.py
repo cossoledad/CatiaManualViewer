@@ -133,6 +133,8 @@ class WorkspaceUI:
         self.library_action.triggered.connect(self.manage_library)
         self.transfer_action = menu.addAction(icon("transfer"), "数据迁移…")
         self.transfer_action.triggered.connect(self.manage_transfer)
+        self.agent_action = menu.addAction(icon("agent"), "Agent 接入…")
+        self.agent_action.triggered.connect(self.manage_agent)
         self.terms_action = menu.addAction(icon("book"), "术语与别名…")
         self.terms_action.triggered.connect(self.manage_terms)
         self.semantic_action = menu.addAction(icon("search"), "智能搜索…")

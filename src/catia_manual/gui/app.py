@@ -151,6 +151,9 @@ class MainWindow(
         self.requested_history_position = None
         self.jobs: set[Job] = set()
         self.index_running = False
+        from catia_manual.gui.agent import AgentController
+
+        self.agent_controller = AgentController(self)
         self.init_resources()
         self.search_generation = 0
         self.translation_generation = 0
@@ -173,6 +176,8 @@ class MainWindow(
             QTimer.singleShot(0, self.show_home)
         if not (settings.root / "online").is_dir():
             QTimer.singleShot(250, self.configure_settings)
+        if settings.agent.get("auto_start", False):
+            QTimer.singleShot(800, lambda: self.agent_controller.start(automatic=True))
 
     def create_reader(self):
         self.profile = QWebEngineProfile(self)
@@ -311,6 +316,13 @@ class MainWindow(
 
         self.save_location_scroll()
         dialog = TransferDialog(self)
+        dialog.exec()
+        dialog.deleteLater()
+
+    def manage_agent(self):
+        from catia_manual.gui.agent import AgentDialog
+
+        dialog = AgentDialog(self)
         dialog.exec()
         dialog.deleteLater()
 
@@ -1049,6 +1061,8 @@ class MainWindow(
         library_changed = (
             settings.root != self.settings.root or settings.database != self.settings.database
         )
+        if library_changed:
+            self.agent_controller.stop("文档库已切换，请重新启动 Agent 服务")
         self.detach_reading_page()
         self.invalidate_translation()
         self.search_generation += 1
@@ -1092,6 +1106,12 @@ class MainWindow(
         self.statusBar().showMessage("设置已保存", 2000)
 
     def closeEvent(self, event):
+        if self.agent_controller.active:
+            if self.agent_controller.state != "stopping":
+                self.agent_controller.stop()
+            QTimer.singleShot(100, self.close)
+            event.ignore()
+            return
         self.save_map_location()
         self.flush_map_state()
         if getattr(self, "search_cancel", None) is not None:

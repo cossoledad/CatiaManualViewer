@@ -16,7 +16,7 @@ if (-not (Test-Path -LiteralPath '.venv\Scripts\python.exe')) {
     if ($LASTEXITCODE -ne 0) { throw '创建虚拟环境失败。' }
 }
 $venvPython = Join-Path $projectRoot '.venv\Scripts\python.exe'
-$extras = if ($CoreOnly) { '.[dev]' } else { '.[gui,catia,translation,offline,search,dev]' }
+$extras = if ($CoreOnly) { '.[dev]' } else { '.[gui,catia,translation,offline,search,agent,dev]' }
 & $venvPython -m pip install -e $extras
 if ($LASTEXITCODE -ne 0) { throw '依赖安装失败。' }
 if (-not (Test-Path -LiteralPath 'config.local.toml')) {

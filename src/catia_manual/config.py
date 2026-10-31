@@ -36,6 +36,7 @@ class Settings:
     config_path: Path | None = None
     appearance: dict = field(default_factory=lambda: dict(APPEARANCE))
     search: dict = field(default_factory=lambda: {"mode": "keyword", "threads": 2})
+    agent: dict = field(default_factory=dict)
 
 
 def database_for_root(database: Path, root: Path) -> Path:
@@ -113,6 +114,7 @@ def load_settings(path: Path | None = None) -> Settings:
         else (project / "config.local.toml" if is_compiled() else None),
         appearance={**APPEARANCE, **data.get("appearance", {})},
         search=search,
+        agent=dict(data.get("agent", {})),
     )
 
 
@@ -142,6 +144,7 @@ def save_settings(settings: Settings, changes: dict) -> Settings:
         "translation": settings.translation,
         "appearance": settings.appearance,
         "search": settings.search,
+        "agent": settings.agent,
     }
     for section, defaults in base_sections.items():
         if section not in document:

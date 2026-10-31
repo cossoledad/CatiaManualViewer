@@ -114,7 +114,14 @@ def verify_archive(archive: Path, version: str):
             return any(
                 (
                     key.casefold()
-                    in {"api_key", "api_key_override", "api_key_encrypted", "token", "password"}
+                    in {
+                        "api_key",
+                        "api_key_override",
+                        "api_key_encrypted",
+                        "token",
+                        "token_encrypted",
+                        "password",
+                    }
                     and bool(item)
                 )
                 or (isinstance(item, dict) and contains_secret(item))

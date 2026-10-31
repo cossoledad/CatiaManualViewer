@@ -3,3 +3,4 @@
 Nuitka==4.3.1
 onnxruntime==1.31.1
 tokenizers==0.23.3
+mcp==1.30.0

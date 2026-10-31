@@ -6,7 +6,7 @@
 
 ```powershell
 .\scripts\bootstrap.ps1 -PythonExe 'C:\path\to\python.exe' -SkipModels
-.\.venv\Scripts\python.exe -m pip install -e '.[gui,catia,translation,offline,search,dev,packaging]'
+.\.venv\Scripts\python.exe -m pip install -e '.[gui,catia,translation,offline,search,agent,dev,packaging]'
 .\.venv\Scripts\python.exe -m catia_manual gui
 ```
 
@@ -34,6 +34,13 @@ ruff check src scripts tests packaging
 ```
 
 保留关键的解析、资源边界、检索、迁移、缓存、图与发布测试。原生界面验收可运行 `scripts/verify_function_map_gui.py`、`scripts/verify_relations_gui.py`、`scripts/verify_graph_canvas.py` 和 `scripts/verify_transfer_gui.py`；使用合成文档，不启动 CATIA 或调用翻译 API。报告写入忽略提交的 `data`。高 DPI 可设置 `QT_SCALE_FACTOR=1.5`；窗口交互检查使用原生 Qt 平台。
+
+Agent 验收使用 `scripts/verify_agent.py`（官方 MCP 客户端、真实 TCP、认证与只读校验）及 `scripts/verify_agent_gui.py`（界面启停、加密保存、库授权与进程退出）。前者可加 `--real` 只读检查本机配置的真实手册。Windows 上网络及 asyncio 验证需在允许本机 socket 的原生环境运行；不需要外部网络或云服务。使用方式见 [Agent 接入](agent.md)。这些验证不加入 CI。
+
+便携包构建后，使用 `python scripts/verify_agent.py --exe '便携目录/CatiaManualViewer.exe'` 验证编译版服务入口；客户端从独立目录连接真实 TCP，不依赖编译进程的 Python 环境。
+
+MCP 验收默认使用免令牌模式；加 `--require-token` 验证可选认证及令牌轮换。
+Windows 开发机可加 `--wsl`，使用默认 WSL 发行版的 Python 标准库验证跨系统的初始化、搜索与原文读取，无需在 WSL 安装额外依赖。
 
 ## 维护工具
 

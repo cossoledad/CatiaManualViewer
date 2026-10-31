@@ -31,3 +31,10 @@ window_height = 940
 mode = 'keyword'
 model_dir = 'data/search-models/e5-small'
 threads = 2
+
+[agent]
+require_token = false
+host = '127.0.0.1'
+port = 8765
+auto_start = false
+allow_subnets = ['127.0.0.0/8', '10.0.0.0/8', '172.16.0.0/12', '192.168.0.0/16']

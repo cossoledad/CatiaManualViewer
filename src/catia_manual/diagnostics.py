@@ -21,6 +21,8 @@ def verify_runtime(settings: Settings, output: Path) -> int:
         checks["command_vocabulary"] = str(exc)
     for name in (
         "httpx",
+        "mcp.server.fastmcp",
+        "uvicorn.protocols.http.h11_impl",
         "pythoncom",
         "win32com.client",
         "ctranslate2",
