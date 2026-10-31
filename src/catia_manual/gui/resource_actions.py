@@ -3,13 +3,15 @@
 import json
 import time
 
-from PySide6.QtCore import QObject, Qt, Signal, Slot
+from PySide6.QtCore import QObject, Qt, QUrl, Signal, Slot
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtWidgets import QApplication, QMenu
 
 from catia_manual.core.capabilities import detect_capabilities
 from catia_manual.core.paths import resolve_link
 from catia_manual.core.resources import IMAGE_EXTENSIONS, ResourceService
 from catia_manual.gui.image_preview import ImagePreview
+from catia_manual.gui.style import icon
 from catia_manual.integrations.catia import CatiaLauncher
 
 
@@ -23,6 +25,59 @@ class ResourceBridge(QObject):
 
 
 class ResourceActions:
+    def original_url(self, relative, fragment=""):
+        path = self.parser.source(relative)
+        if not path.is_file():
+            raise FileNotFoundError("原始页面不存在：" + relative)
+        url = QUrl.fromLocalFile(str(path))
+        if fragment:
+            url.setFragment(fragment)
+        return url
+
+    def open_original(self, relative, fragment=""):
+        try:
+            url = self.original_url(relative, fragment)
+            if not QDesktopServices.openUrl(url):
+                self.show_error("无法启动默认浏览器")
+        except (ValueError, OSError) as exc:
+            self.show_error(str(exc))
+
+    def add_original_action(self, menu, relative, fragment="", label="在浏览器中打开原始页面"):
+        action = menu.addAction(icon("external"), label)
+        try:
+            self.original_url(relative, fragment)
+        except (ValueError, OSError):
+            action.setEnabled(False)
+        action.triggered.connect(lambda: self.open_original(relative, fragment))
+        return action
+
+    def result_context_menu(self, position):
+        item = self.results.itemAt(position)
+        if item is None or item.data(Qt.ItemDataRole.UserRole) == "@index":
+            return
+        source = item.data(Qt.ItemDataRole.UserRole + 1) or {}
+        menu = QMenu(self)
+        self.add_original_action(
+            menu, item.data(Qt.ItemDataRole.UserRole), source.get("fragment", "")
+        )
+        menu.exec(self.results.viewport().mapToGlobal(position))
+        menu.deleteLater()
+
+    def tree_context_menu(self, position):
+        item = self.tree.itemAt(position)
+        data = item.data(0, Qt.ItemDataRole.UserRole) if item else None
+        if not data:
+            return
+        path = data.get("path")
+        if not path and data.get("module") in self.catalog.manuals:
+            path = self.catalog.manuals[data["module"]].entry
+        if not path:
+            return
+        menu = QMenu(self)
+        self.add_original_action(menu, path, data.get("fragment", ""))
+        menu.exec(self.tree.viewport().mapToGlobal(position))
+        menu.deleteLater()
+
     def init_resources(self):
         self.resources = ResourceService(self.settings.root)
         self.catia_session = False
@@ -179,6 +234,11 @@ class ResourceActions:
                 )
                 if not link.target:
                     continue
+                if link.kind == "document":
+                    self.add_original_action(
+                        menu, link.target, link.fragment, "在浏览器中打开链接原文"
+                    )
+                    menu.addSeparator()
                 is_image = (
                     self.resources.path(link.target, must_exist=False).suffix.lower()
                     in IMAGE_EXTENSIONS
@@ -193,6 +253,13 @@ class ResourceActions:
             action = menu.addAction("翻译选中文字")
             action.setEnabled(self.capabilities.selection_translation.available)
             action.triggered.connect(self.translate_selection)
+        if self.current_document:
+            if not menu.isEmpty():
+                menu.addSeparator()
+            location = self.history.current
+            self.add_original_action(
+                menu, self.current_document.path, location.fragment if location else ""
+            )
         if menu.isEmpty():
             action = menu.addAction("当前没有可用的资源操作")
             action.setEnabled(False)

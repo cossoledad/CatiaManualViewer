@@ -11,6 +11,7 @@ class Location:
     reading_anchor: dict | None = None
     source: dict | None = None
     placement: dict | None = None
+    search_terms: list[str] | None = None
 
 
 class NavigationHistory:

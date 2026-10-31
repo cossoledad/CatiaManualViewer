@@ -4,7 +4,7 @@ import hashlib
 import json
 from collections import OrderedDict
 
-from PySide6.QtCore import QTimer
+from PySide6.QtCore import Qt, QTimer
 from PySide6.QtWidgets import QButtonGroup, QHBoxLayout, QToolButton, QWidget
 
 from catia_manual.core.index import ManualIndex
@@ -13,7 +13,7 @@ from catia_manual.core.parser import ManualParser
 from catia_manual.core.providers import PROVIDERS
 from catia_manual.core.source import resolve_source, source_for_block
 from catia_manual.core.translation import make_provider
-from catia_manual.gui.style import ASSETS
+from catia_manual.gui.style import ASSETS, icon
 from catia_manual.gui.widgets import ElidedLabel
 
 READER_SCRIPT = (ASSETS / "reader_translation.js").read_text("utf-8")
@@ -61,6 +61,10 @@ class PageReader:
         row.addWidget(self.pause_page_button)
         self.retry_page_button = QToolButton()
         self.retry_page_button.setText("重试")
+        self.retry_page_button.setIcon(icon("refresh"))
+        self.retry_page_button.setToolTip("重试未完成的段落")
+        self.retry_page_button.setAccessibleName("重试翻译")
+        self.retry_page_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         self.retry_page_button.clicked.connect(lambda: self.retry_page_translation())
         row.addWidget(self.retry_page_button)
         nav.addWidget(self.reading_controls)
@@ -229,13 +233,19 @@ class PageReader:
         }
         if position is not None:
             payload["position"] = position
+
+        def applied(_):
+            if self.page_task is task and self.page_ready and not self.page_loading:
+                self.update_search_focus()
+                self.reveal_reading_page()
+
         self.application_script(
             "window.cmvReader && window.cmvReader.apply("
             + json.dumps(task.page.key)
             + ","
             + json.dumps(payload)
             + ")",
-            lambda _: self.reveal_reading_page(),
+            applied,
         )
 
     def set_reading_mode(self, mode):
@@ -278,6 +288,9 @@ class PageReader:
         pending = len(task.results) + len(task.errors) < len(task.page.units)
         self.pause_page_button.setEnabled(active and pending and not self.page_service_error)
         self.pause_page_button.setText("继续" if task.paused else "暂停")
+        self.pause_page_button.setIcon(icon("play" if task.paused else "pause"))
+        self.pause_page_button.setAccessibleName("继续翻译" if task.paused else "暂停翻译")
+        self.pause_page_button.setToolButtonStyle(Qt.ToolButtonStyle.ToolButtonIconOnly)
         self.pause_page_button.setToolTip("暂停后不再发送新段落，正在处理的段落仍会缓存")
         self.retry_page_button.setEnabled(active and bool(task.errors or self.page_service_error))
         if not active:

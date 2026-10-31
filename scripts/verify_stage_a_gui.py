@@ -105,6 +105,9 @@ def wait(predicate, seconds=20):
                 "results": len(task.results) if task else None,
                 "units": len(task.page.units) if task else None,
                 "errors": task.errors if task else None,
+                "status": window.statusBar().currentMessage(),
+                "jobs": len(window.jobs),
+                "expected_render": str(window.expected_render),
             }
         )
     )
@@ -235,7 +238,8 @@ try:
     )
 
     window.set_reading_mode("bilingual")
-    wait(lambda: len(window.page_task.results) == len(window.page_task.page.units))
+    # Software WebEngine rendering at high DPI can take over 20s for all 20 units.
+    wait(lambda: len(window.page_task.results) == len(window.page_task.page.units), seconds=45)
     window.open_document("online/prtug_C2/other.htm", "topic")
     ready()
     check(window.page_task.mode == "bilingual", "new pages inherit the global reading mode")

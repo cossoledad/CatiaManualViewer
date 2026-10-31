@@ -7,11 +7,11 @@ from PySide6.QtWidgets import (
     QGridLayout,
     QHBoxLayout,
     QLabel,
-    QLineEdit,
     QListWidget,
     QMenu,
     QPushButton,
     QScrollArea,
+    QSizePolicy,
     QSplitter,
     QStackedWidget,
     QTabWidget,
@@ -25,8 +25,9 @@ from PySide6.QtWidgets import (
 
 from catia_manual.core.catalog import ManualCatalog
 from catia_manual.core.navigation import Location
+from catia_manual.gui.search_focus import MatchDelegate
 from catia_manual.gui.style import APP_NAME, STYLESHEET, app_icon, icon
-from catia_manual.gui.widgets import ElidedLabel
+from catia_manual.gui.widgets import ElidedLabel, SearchField
 
 
 class CatalogCard(QFrame):
@@ -69,6 +70,13 @@ class CatalogCard(QFrame):
 
 
 class WorkspaceUI:
+    def show_about(self):
+        from catia_manual.gui.about import AboutDialog
+
+        dialog = AboutDialog(self)
+        dialog.exec()
+        dialog.deleteLater()
+
     def build_interface(self):
         self.setWindowTitle(APP_NAME)
         self.setWindowIcon(app_icon())
@@ -100,11 +108,8 @@ class WorkspaceUI:
         self.module.setToolTip("搜索范围")
         self.module.currentIndexChanged.connect(self.scope_changed)
         top.addWidget(self.module)
-        self.query = QLineEdit()
-        self.query.setObjectName("search")
-        self.query.setClearButtonEnabled(True)
+        self.query = SearchField()
         self.query.setPlaceholderText("搜索功能、命令或操作步骤")
-        self.query.addAction(icon("search"), QLineEdit.ActionPosition.LeadingPosition)
         self.query.returnPressed.connect(self.search)
         top.addWidget(self.query, 1)
         search = QPushButton("搜索")
@@ -119,13 +124,13 @@ class WorkspaceUI:
         self.build_button = QAction(icon("refresh"), "更新文档索引", self)
         self.build_button.triggered.connect(self.build_index)
         menu.addAction(self.build_button)
-        self.library_action = menu.addAction("文档库管理…")
+        self.library_action = menu.addAction(icon("layers"), "文档库管理…")
         self.library_action.triggered.connect(self.manage_library)
-        self.terms_action = menu.addAction("术语与别名…")
+        self.terms_action = menu.addAction(icon("book"), "术语与别名…")
         self.terms_action.triggered.connect(self.manage_terms)
-        self.semantic_action = menu.addAction("智能搜索…")
+        self.semantic_action = menu.addAction(icon("search"), "智能搜索…")
         self.semantic_action.triggered.connect(self.manage_semantic)
-        self.tools_action = QAction("显示阅读侧栏", self)
+        self.tools_action = QAction(icon("tools"), "显示阅读侧栏", self)
         self.tools_action.setCheckable(True)
         self.tools_action.setChecked(self.settings.appearance.get("show_tools", True))
         self.tools_action.triggered.connect(self.toggle_tools)
@@ -142,6 +147,9 @@ class WorkspaceUI:
             lambda: menu.popup(self.more_button.mapToGlobal(self.more_button.rect().bottomLeft()))
         )
         top.addWidget(self.more_button)
+        menu.addSeparator()
+        self.about_action = menu.addAction(icon("info"), "关于 Catia Manual Viewer")
+        self.about_action.triggered.connect(self.show_about)
         layout.addWidget(header)
         self.split = QSplitter()
         self.tabs = QTabWidget()
@@ -150,17 +158,26 @@ class WorkspaceUI:
         self.tree.setHeaderHidden(True)
         self.tree.setIndentation(16)
         self.tree.setAnimated(True)
+        self.tree_delegate = MatchDelegate(self.tree, tree=True)
+        self.tree.setItemDelegate(self.tree_delegate)
         self.tree.itemExpanded.connect(self.expand_module)
         self.tree.itemClicked.connect(self.activate_tree)
         self.tree.itemActivated.connect(self.activate_tree)
         self.results = QListWidget()
         self.results.setWordWrap(True)
+        self.results.setItemDelegate(MatchDelegate(self.results))
         self.results.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
         self.results.itemClicked.connect(self.activate_result)
+        self.results.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.results.customContextMenuRequested.connect(self.result_context_menu)
+        self.tree.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.tree.customContextMenuRequested.connect(self.tree_context_menu)
         self.tabs.addTab(self.tree, "功能导航")
         self.tabs.addTab(self.results, "搜索结果")
         self.split.addWidget(self.tabs)
         middle = QWidget()
+        middle.setMinimumWidth(320)
+        middle.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Expanding)
         center = QVBoxLayout(middle)
         center.setContentsMargins(12, 8, 12, 0)
         nav = QHBoxLayout()
@@ -203,10 +220,28 @@ class WorkspaceUI:
         nav.addSpacing(8)
         nav.addWidget(self.page_title, 1)
         self.add_page_controls(nav)
+        self.focus_action = QAction(icon("highlight"), "突出显示搜索匹配", self)
+        self.focus_action.setCheckable(True)
+        self.focus_action.setChecked(True)
+        self.focus_action.setEnabled(False)
+        self.focus_action.triggered.connect(lambda: self.update_search_focus())
+        focus_button = QToolButton()
+        focus_button.setDefaultAction(self.focus_action)
+        nav.addWidget(focus_button)
+        self.tools_button = QToolButton()
+        self.tools_button.setIcon(icon("tools"))
+        self.tools_button.setCheckable(True)
+        self.tools_button.setChecked(self.tools_action.isChecked())
+        self.tools_button.setToolTip("阅读侧栏")
+        self.tools_button.setAccessibleName("阅读侧栏")
+        self.tools_button.toggled.connect(self.toggle_tools)
+        nav.addWidget(self.tools_button)
         center.addLayout(nav)
         breadcrumbs = QHBoxLayout()
         self.return_results = QToolButton()
-        self.return_results.setText("返回搜索结果")
+        self.return_results.setIcon(icon("search"))
+        self.return_results.setToolTip("返回搜索结果")
+        self.return_results.setAccessibleName("返回搜索结果")
         self.return_results.clicked.connect(lambda: self.tabs.setCurrentWidget(self.results))
         self.return_results.hide()
         breadcrumbs.addWidget(self.return_results)
@@ -215,15 +250,20 @@ class WorkspaceUI:
         self.breadcrumb.setTextInteractionFlags(Qt.TextInteractionFlag.LinksAccessibleByMouse)
         self.breadcrumb.linkActivated.connect(self.breadcrumb_clicked)
         self.breadcrumb.setMinimumWidth(0)
+        self.breadcrumb.setSizePolicy(QSizePolicy.Policy.Ignored, QSizePolicy.Policy.Fixed)
+        self.breadcrumb.setFixedHeight(32)
         breadcrumbs.addWidget(self.breadcrumb, 1)
         self.reference_reading = QToolButton()
-        self.reference_reading.setText("参考说明")
+        self.reference_reading.setIcon(icon("book"))
+        self.reference_reading.setAccessibleName("参考说明")
         self.reference_reading.setToolTip("查看当前文章引用的参考说明")
         self.reference_reading.clicked.connect(self.open_reference_reading)
         self.reference_reading.hide()
         breadcrumbs.addWidget(self.reference_reading)
         self.other_positions = QToolButton()
-        self.other_positions.setText("其他位置")
+        self.other_positions.setIcon(icon("network"))
+        self.other_positions.setToolTip("其他功能位置")
+        self.other_positions.setAccessibleName("其他位置")
         self.other_positions.clicked.connect(self.choose_other_position)
         self.other_positions.hide()
         breadcrumbs.addWidget(self.other_positions)
@@ -242,8 +282,20 @@ class WorkspaceUI:
         self.split.addWidget(middle)
         self.details_pane = QWidget()
         self.details_pane.setMinimumWidth(235)
+        self.details_pane.setObjectName("readingSidebar")
         details = QVBoxLayout(self.details_pane)
         details.setContentsMargins(10, 16, 14, 12)
+        side_header = QHBoxLayout()
+        side_title = QLabel("阅读工具")
+        side_title.setObjectName("sectionTitle")
+        side_header.addWidget(side_title)
+        side_header.addStretch()
+        close_tools = QToolButton()
+        close_tools.setIcon(icon("close"))
+        close_tools.setToolTip("收起阅读侧栏")
+        close_tools.clicked.connect(lambda: self.toggle_tools(False))
+        side_header.addWidget(close_tools)
+        details.addLayout(side_header)
         self.sample_group = QWidget()
         samples_layout = QVBoxLayout(self.sample_group)
         samples_layout.setContentsMargins(0, 0, 0, 0)
@@ -270,7 +322,7 @@ class WorkspaceUI:
         self.sample_info = QLabel("选择文章查看资源")
         self.sample_info.setObjectName("muted")
         samples_layout.addWidget(self.sample_info)
-        self.sample_group.setMinimumHeight(170)
+        self.sample_group.setMinimumHeight(100)
         self.sample_group.setMaximumHeight(220)
         details.addWidget(self.sample_group)
         translation_header = QHBoxLayout()
@@ -293,11 +345,15 @@ class WorkspaceUI:
         ):
             sizes = [275, 925, 280]
         self.split.setSizes(sizes)
+        self.tools_width = max(235, sizes[2])
         self.split.splitterMoved.connect(
             lambda *_: self.remember_preferences({"sidebar_sizes": self.split.sizes()})
         )
         self.split.setCollapsible(0, False)
         self.split.setCollapsible(1, False)
+        self.split.setCollapsible(2, False)
+        self.split.setStretchFactor(1, 1)
+        self.details_pane.setVisible(self.tools_action.isChecked())
         layout.addWidget(self.split, 1)
         self.setCentralWidget(container)
         self.translation_status = ElidedLabel()
@@ -389,8 +445,10 @@ class WorkspaceUI:
         self.web.reveal()
         self.details_pane.setVisible(self.settings.appearance.get("show_tools", True))
         self.samples.clear()
+        self.sample_group.hide()
         self.sample_info.setText("选择文章查看资源")
         self.translation.clear()
+        self.focus_action.setEnabled(False)
         while self.home_layout.count():
             item = self.home_layout.takeAt(0)
             if item.widget():
@@ -470,6 +528,16 @@ class WorkspaceUI:
         self.open_document(manual.entry)
 
     def toggle_tools(self, enabled):
-
+        if not enabled and self.details_pane.isVisible():
+            self.tools_width = max(235, self.split.sizes()[2])
         self.remember_preferences({"show_tools": enabled})
+        for control in (self.tools_action, self.tools_button):
+            control.blockSignals(True)
+            control.setChecked(enabled)
+            control.blockSignals(False)
         self.details_pane.setVisible(enabled)
+        if enabled:
+            sizes = self.split.sizes()
+            if sizes[2] < 235:
+                width = min(self.tools_width, max(235, self.split.width() // 4))
+                self.split.setSizes([sizes[0], max(320, sizes[1] - width), width])

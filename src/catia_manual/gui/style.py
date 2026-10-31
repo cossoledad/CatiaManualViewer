@@ -19,6 +19,12 @@ def icon(name: str, color="#60758a") -> QIcon:
         "forward": "M10 5l7 7-7 7M4 12h13",
         "history": "M3 4v5h5M3 9a9 9 0 1 1 1 10M12 7v5l3 2",
         "more": "M5 11v2M12 11v2M19 11v2",
+        "close": "M6 6l12 12M6 18L18 6",
+        "info": "M12 11v6M12 7v.2M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0",
+        "highlight": "M4 17l9-13 7 5-9 13zM3 22h7M7 13l7 5",
+        "pause": "M8 5v14M16 5v14",
+        "play": "M7 4l14 8-14 8z",
+        "external": "M13 3h8v8M21 3L10 14M10 4H4v16h16v-6",
         "search": "M20 20l-5-5M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0",
         "settings": "M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6",
         "refresh": "M20 7v5h-5M4 17v-5h5M5 8a8 8 0 0 1 14-2l1 6M4 12l1 6a8 8 0 0 0 14-2",
@@ -76,9 +82,13 @@ QPushButton#primary {background:#1b777a;border-color:#1b777a;color:white;font-we
 QPushButton#primary:hover {background:#14666a;}
 QToolButton {background:transparent;border:0;border-radius:6px;padding:7px;}
 QToolButton:hover {background:#e6eef4;}
+QToolButton:checked {background:#daeeeb;color:#176e73;}
 QToolButton#readingMode:checked {background:#daeeeb;color:#176e73;}
 QToolButton:disabled {color:#b2bdc6;}
 QToolButton {min-width:20px;min-height:20px;}
+QWidget#readingSidebar {background:#ffffff;border-left:1px solid #e1e8ef;}
+QLabel#sectionTitle {font-weight:600;color:#365c6a;}
+QTextBrowser {border:1px solid #e4ebef;border-radius:7px;padding:8px;}
 QTreeWidget,QListWidget,QTextBrowser {background:white;border:0;outline:0;}
 QTreeWidget::item {padding:7px 4px;border-radius:5px;}
 QTreeWidget::item:hover {background:#f1f6f9;}

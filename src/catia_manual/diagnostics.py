@@ -41,6 +41,7 @@ def verify_runtime(settings: Settings, output: Path) -> int:
     except Exception as exc:
         checks["fts5"] = str(exc)
     checks["icons"] = all((ASSETS / name).is_file() for name in ("app.ico", "app.svg"))
+    checks["reader_focus"] = (ASSETS / "reader_focus.js").is_file()
     try:
         from PySide6.QtCore import QFile
         from PySide6.QtWebChannel import QWebChannel

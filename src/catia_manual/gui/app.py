@@ -52,6 +52,7 @@ from catia_manual.core.translation import TranslationService, make_provider
 from catia_manual.gui.page_reader import PageReader
 from catia_manual.gui.reading_navigation import ReadingNavigation
 from catia_manual.gui.resource_actions import ResourceActions, ResourceBridge
+from catia_manual.gui.search_focus import TERMS_ROLE, SearchFocus, focus_terms, snippet_text
 from catia_manual.gui.settings import GlobalSettings
 from catia_manual.gui.status import StatusCenter
 from catia_manual.gui.style import APP_NAME, ASSETS, app_icon
@@ -115,7 +116,9 @@ class ReaderPage(QWebEnginePage):
         return True
 
 
-class MainWindow(ReadingNavigation, ResourceActions, PageReader, WorkspaceUI, QMainWindow):
+class MainWindow(
+    SearchFocus, ReadingNavigation, ResourceActions, PageReader, WorkspaceUI, QMainWindow
+):
     def __init__(self, settings: Settings, initial_target: str | None = None):
         super().__init__()
         self.settings = settings
@@ -275,10 +278,13 @@ class MainWindow(ReadingNavigation, ResourceActions, PageReader, WorkspaceUI, QM
             return
         source = item.data(Qt.ItemDataRole.UserRole + 1)
         placement = item.data(Qt.ItemDataRole.UserRole + 2)
+        terms = item.data(TERMS_ROLE)
         if source:
-            self.open_source(source, placement=placement)
+            self.open_source(source, placement=placement, search_terms=terms)
         else:
-            self.open_document(item.data(Qt.ItemDataRole.UserRole), placement=placement)
+            self.open_document(
+                item.data(Qt.ItemDataRole.UserRole), placement=placement, search_terms=terms
+            )
 
     def manage_library(self):
         from catia_manual.gui.library import LibraryDialog
@@ -307,7 +313,7 @@ class MainWindow(ReadingNavigation, ResourceActions, PageReader, WorkspaceUI, QM
         dialog.exec()
         dialog.deleteLater()
 
-    def open_source(self, value, history_index=None, placement=None):
+    def open_source(self, value, history_index=None, placement=None, search_terms=None):
         if history_index is not None:
             placement = self.history.entries[history_index].placement
         try:
@@ -354,6 +360,7 @@ class MainWindow(ReadingNavigation, ResourceActions, PageReader, WorkspaceUI, QM
                 history_index=history_index,
                 source_location=result.source.to_dict(),
                 placement=placement,
+                search_terms=search_terms,
             )
             if result.status.startswith("relocated"):
                 self.statusBar().showMessage("原文已修订，已重新定位来源", 4000)
@@ -368,6 +375,7 @@ class MainWindow(ReadingNavigation, ResourceActions, PageReader, WorkspaceUI, QM
         history_index: int | None = None,
         source_location: dict | None = None,
         placement: dict | None = None,
+        search_terms: list[str] | None = None,
     ):
         self.statusBar().clear_source("source")
         self.save_location_scroll()
@@ -471,6 +479,8 @@ class MainWindow(ReadingNavigation, ResourceActions, PageReader, WorkspaceUI, QM
                         Location(document.path, fragment, document.title, placement=selected)
                     )
                 self.pending_restore = None
+                if self.history.current:
+                    self.history.current.search_terms = search_terms
             if source_location:
                 self.pending_reading_restore = {
                     "source_block": source_location.get("block_id", ""),
@@ -496,6 +506,7 @@ class MainWindow(ReadingNavigation, ResourceActions, PageReader, WorkspaceUI, QM
             self.sample_info.setText(
                 "双击打开 · 右键定位" if self.samples.count() else "本页暂无示例文件"
             )
+            self.sample_group.setVisible(self.samples.count() > 0)
             self.update_history_actions()
             if same_page:
                 self.web.reveal()
@@ -568,11 +579,15 @@ class MainWindow(ReadingNavigation, ResourceActions, PageReader, WorkspaceUI, QM
         self.attach_reading_page(self.pending_reading_restore, self.reading_fragment)
 
     def reveal_reading_page(self):
+        if not self.page_ready or self.page_loading:
+            return
         generation = self.navigation_generation
+        # Give the native WebEngine surface its final visible geometry under the cover.
+        # A hidden widget's first frame can otherwise appear at its pre-layout dimensions.
+        self.center_stack.setCurrentWidget(self.web)
 
         def reveal():
             if generation == self.navigation_generation and self.page_ready:
-                self.center_stack.setCurrentWidget(self.web)
                 self.web.reveal()
                 self.statusBar().clear_source("navigation")
                 self.apply_reading_navigation()
@@ -625,7 +640,8 @@ class MainWindow(ReadingNavigation, ResourceActions, PageReader, WorkspaceUI, QM
             self.show_error("无法映射到本机 CATIA 文档：" + target)
 
     def activate_request(self, request):
-        self.showNormal()
+        if self.isMinimized():
+            self.showNormal()
         self.raise_()
         self.activateWindow()
         if request.get("open"):
@@ -734,6 +750,9 @@ class MainWindow(ReadingNavigation, ResourceActions, PageReader, WorkspaceUI, QM
                 return
             response, indexed = result
             self.results.clear()
+            terms = focus_terms(query, response.plan.expanded)
+            self.tree_delegate.terms = terms
+            self.tree.viewport().update()
             for hit in response.hits:
                 manual = self.catalog.manuals.get(hit.module)
                 if hit.placement:
@@ -742,9 +761,9 @@ class MainWindow(ReadingNavigation, ResourceActions, PageReader, WorkspaceUI, QM
                 from catia_manual.core.structure import ROLE_LABELS
 
                 label += " · " + ROLE_LABELS.get(hit.page_role, "正文")
-                preview = " ".join(hit.snippet.split())[:170]
+                preview = snippet_text(" ".join(hit.snippet.split()), terms)[:170]
                 trail = hit.placement["trail"] if hit.placement else hit.heading_path
-                heading = " / ".join(trail[1:])
+                heading = " / ".join(trail[1:-1])
                 item = QListWidgetItem(
                     (f"{hit.title_zh} / {hit.title}" if hit.title_zh else hit.title)
                     + f"\n{label}"
@@ -754,6 +773,7 @@ class MainWindow(ReadingNavigation, ResourceActions, PageReader, WorkspaceUI, QM
                 item.setData(Qt.ItemDataRole.UserRole, hit.path)
                 item.setData(Qt.ItemDataRole.UserRole + 1, hit.source)
                 item.setData(Qt.ItemDataRole.UserRole + 2, hit.placement)
+                item.setData(TERMS_ROLE, terms)
                 item.setToolTip(hit.reason + "\n" + hit.path)
                 self.results.addItem(item)
             self.tabs.setCurrentWidget(self.results)
@@ -1003,6 +1023,7 @@ class MainWindow(ReadingNavigation, ResourceActions, PageReader, WorkspaceUI, QM
         self.auto_translate.blockSignals(False)
         self.update_translation_status()
         self.tools_action.setChecked(settings.appearance.get("show_tools", True))
+        self.toggle_tools(settings.appearance.get("show_tools", True))
         if library_changed:
             self.navigation_generation += 1
             self.parser = ManualParser(settings.root)
