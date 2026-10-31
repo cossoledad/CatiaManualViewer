@@ -47,7 +47,7 @@ def provider_profile(config: dict, name: str) -> dict:
     result.pop("label", None)
     result.update(config.get("profiles", {}).get(name, {}))
     if config.get("provider") == name:
-        for key in ("endpoint", "model", "api_key_env"):
-            if config.get(key):
+        for key in ("endpoint", "model", "api_key_env", "api_key_encrypted"):
+            if key in config:
                 result[key] = config[key]
     return result

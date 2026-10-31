@@ -35,18 +35,15 @@ class SemanticDialog(QDialog):
         self.setWindowTitle("智能搜索 · Catia Manual Viewer")
         self.resize(660, 370)
         layout = QVBoxLayout(self)
-        intro = QLabel("中文描述也能检索英文手册。模型和索引在本机运行，搜索文本不发送到在线服务。")
-        intro.setWordWrap(True)
-        layout.addWidget(intro)
-        model = QLabel("Multilingual E5 Small · CPU · 约 135 MB · MIT")
+        model = QLabel("Multilingual E5 Small · 135 MB")
         layout.addWidget(model)
         row = QHBoxLayout()
         self.directory = QLineEdit(
             window.settings.search.get("model_dir", "data/search-models/e5-small")
         )
         self.directory.setCursorPosition(0)
-        self.directory.editingFinished.connect(self.refresh)
-        self.browse = QPushButton("选择模型目录")
+        self.directory.editingFinished.connect(self.directory_changed)
+        self.browse = QPushButton("浏览")
         self.browse.clicked.connect(self.choose_directory)
         row.addWidget(self.directory, 1)
         row.addWidget(self.browse)
@@ -59,9 +56,9 @@ class SemanticDialog(QDialog):
         self.progress.setRange(0, 100)
         layout.addWidget(self.progress)
         row = QHBoxLayout()
-        self.download = QPushButton("下载／继续下载模型")
+        self.download = QPushButton("下载模型")
         self.download.clicked.connect(self.install)
-        self.build = QPushButton("建立／继续语义索引")
+        self.build = QPushButton("建立索引")
         self.build.clicked.connect(self.index)
         self.pause = QPushButton("暂停")
         self.pause.clicked.connect(self.cancel.set)
@@ -72,7 +69,7 @@ class SemanticDialog(QDialog):
         self.activate = QPushButton("启用混合搜索")
         self.activate.clicked.connect(self.enable)
         layout.addWidget(self.activate)
-        self.note = QLabel("首次需下载模型并建立索引；中断后可继续，已完成内容会保留。")
+        self.note = QLabel()
         self.note.setWordWrap(True)
         self.note.setTextFormat(Qt.TextFormat.PlainText)
         layout.addWidget(self.note)
@@ -92,6 +89,20 @@ class SemanticDialog(QDialog):
         )
         if selected:
             self.directory.setText(selected)
+            self.directory_changed()
+
+    def remember_directory(self):
+        try:
+            if not self.directory.text().strip():
+                raise ValueError("请选择模型目录")
+            self.window.settings = save_settings(self.window.settings, {"search": self.config()})
+            return True
+        except (OSError, ValueError) as exc:
+            self.note.setText(str(exc))
+            return False
+
+    def directory_changed(self):
+        if not self.busy and self.remember_directory():
             self.refresh()
 
     def refresh(self):
@@ -113,14 +124,15 @@ class SemanticDialog(QDialog):
                 "paused": "已暂停",
                 "failed": "可重试",
                 "building": "可继续",
-                "stale": "文档已变化，请更新",
+                "stale": "待更新",
             }
             self.summary.setText(
-                model["reason"]
-                + "\n语义索引："
+                ("模型已就绪" if model["ready"] else "模型未就绪")
+                + "\n索引："
                 + states.get(status["state"], status["state"])
-                + f" · {status['valid']} 个有效片段"
+                + f" · {status['valid']} 段"
             )
+            self.summary.setToolTip(model["reason"])
             self.activate.setEnabled(model["ready"] and status["valid"] > 0)
             self.build.setEnabled(model["ready"])
             total = status["total"]
@@ -168,8 +180,10 @@ class SemanticDialog(QDialog):
         self.window.submit(work, delivered, progress=update, finished=finished, error=failed)
 
     def install(self):
+        if not self.remember_directory():
+            return
         config = self.config()
-        self.note.setText("正在从 Hugging Face 下载固定修订，校验后使用…")
+        self.note.setText("下载中…")
 
         def work(progress):
             try:
@@ -179,16 +193,14 @@ class SemanticDialog(QDialog):
 
         self.run(
             work,
-            lambda result: self.note.setText(
-                "下载已暂停，可继续"
-                if result.get("paused")
-                else "模型已通过完整校验，可建立语义索引"
-            ),
+            lambda result: self.note.setText("已暂停" if result.get("paused") else "模型已就绪"),
         )
 
     def index(self):
+        if not self.remember_directory():
+            return
         config, settings = self.config(), self.window.settings
-        self.note.setText("正在准备模型及文章片段…")
+        self.note.setText("准备中…")
 
         def work(progress):
             with ManualIndex(settings.database, settings.root) as index:
@@ -198,7 +210,7 @@ class SemanticDialog(QDialog):
 
         def done(result):
             self.note.setText(
-                ("已完成" if result["state"] == "ready" else "已暂停，可继续")
+                ("已完成" if result["state"] == "ready" else "已暂停")
                 + f" · 新生成 {result['embedded']} · 复用 {result['reused']}"
             )
             self.window.settings = save_settings(settings, {"search": config})
@@ -213,7 +225,7 @@ class SemanticDialog(QDialog):
         except OSError as exc:
             self.note.setText(str(exc))
             return
-        self.note.setText("已启用混合搜索，可直接输入中文描述。搜索模式也可在全局设置中切换。")
+        self.note.setText("已启用混合搜索")
         self.window.statusBar().publish("search", "已启用本机混合搜索", record=True)
         if self.window.query.text().strip():
             self.window.search()
@@ -223,7 +235,8 @@ class SemanticDialog(QDialog):
             self.closing = True
             self.cancel.set()
         else:
-            super().reject()
+            if self.remember_directory():
+                super().reject()
 
     def closeEvent(self, event):
         if self.busy:
@@ -231,4 +244,7 @@ class SemanticDialog(QDialog):
             self.cancel.set()
             event.ignore()
         else:
-            event.accept()
+            if self.remember_directory():
+                event.accept()
+            else:
+                event.ignore()

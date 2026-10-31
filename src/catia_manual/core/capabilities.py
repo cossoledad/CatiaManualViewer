@@ -5,7 +5,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
-from catia_manual.core.credentials import get_api_key
+from catia_manual.core.credentials import resolve_api_key
+from catia_manual.core.providers import provider_profile
 
 
 @dataclass(frozen=True)
@@ -39,9 +40,12 @@ def detect_capabilities(settings, *, catia_session=False):
     com = module_available("pythoncom") and module_available("win32com")
     samples = Capability(
         sys.platform == "win32" and (launcher or (com and catia_session)),
-        "未检测到可用的 CATIA 启动配置或会话；仍可定位和复制文件路径",
+        "CATIA 不可用",
     )
-    config = settings.translation
+    config = {
+        **settings.translation,
+        **provider_profile(settings.translation, settings.translation.get("provider", "glossary")),
+    }
     name = config.get("provider", "glossary")
     ready, reason = True, ""
     if name == "local":
@@ -51,15 +55,21 @@ def detect_capabilities(settings, *, catia_session=False):
             (model / file).is_file()
             for file in ("model/model.bin", "sentencepiece.model", "metadata.json")
         ) and all(module_available(module) for module in ("ctranslate2", "sentencepiece"))
-        reason = "离线翻译模型或推理组件不可用，请在设置中选择模型或其他服务"
-    elif name in {"deepl", "chat-completions"}:
-        ready = bool(get_api_key(config.get("api_key_env", "CATIA_TRANSLATION_API_KEY")))
-        reason = "请在翻译设置中配置 API Key"
+        reason = "离线模型未就绪"
+    elif name != "glossary":
+        try:
+            key = resolve_api_key(config)
+            ready = name not in {"deepl", "chat-completions"} or bool(key)
+            if not ready:
+                reason = "请填写 API Key"
+        except ValueError as exc:
+            ready = False
+            reason = str(exc)
     if name != "local" and name != "glossary":
         ready = ready and module_available("httpx") and bool(config.get("endpoint", "").strip())
         if name == "chat-completions":
             ready = ready and bool(config.get("model", "").strip())
-        reason = reason or "请检查翻译服务地址与组件"
+        reason = reason or "请检查翻译设置"
     selection = Capability(ready, "" if ready else reason)
     page = Capability(ready and name != "glossary", reason if not ready else "请选择模型或翻译 API")
     return Capabilities(documents, samples, selection, page)

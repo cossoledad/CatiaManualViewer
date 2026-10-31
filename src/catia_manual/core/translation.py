@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Protocol
 
-from catia_manual.core.credentials import get_api_key
+from catia_manual.core.credentials import get_api_key, resolve_api_key
 from catia_manual.core.index import ManualIndex
 from catia_manual.core.providers import provider_profile
 
@@ -259,6 +259,7 @@ def make_provider(config: dict) -> TranslationProvider:
         url = urlsplit(config.get("endpoint", ""))
         if url.scheme not in {"http", "https"} or not url.netloc:
             raise ValueError("请填写完整的 HTTP(S) 翻译服务地址")
+        config["api_key_override"] = resolve_api_key(config)
     if name == "glossary":
         return GlossaryProvider()
     if name == "local":

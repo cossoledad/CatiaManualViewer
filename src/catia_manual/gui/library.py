@@ -47,26 +47,26 @@ class LibraryDialog(QDialog):
         self.root = QLineEdit(str(window.settings.root))
         self.root.textChanged.connect(self.invalidate)
         root_row.addWidget(self.root, 1)
-        self.browse = QPushButton("选择副本目录")
+        self.browse = QPushButton("浏览")
         self.browse.clicked.connect(self.choose_root)
         root_row.addWidget(self.browse)
-        form.addRow("待验证目录", root_row)
+        form.addRow("文档副本", root_row)
         layout.addLayout(form)
         row = QHBoxLayout()
-        self.verify_button = QPushButton("选择已有索引并验证…")
+        self.verify_button = QPushButton("验证索引…")
         self.verify_button.clicked.connect(self.choose_index)
-        self.backup_button = QPushButton("导出当前库快照…")
+        self.backup_button = QPushButton("导出快照…")
         self.backup_button.clicked.connect(self.backup)
         row.addWidget(self.verify_button)
         row.addWidget(self.backup_button)
         layout.addLayout(row)
         self.details = QTextBrowser()
         layout.addWidget(self.details, 1)
-        self.revision = QCheckBox("确认这些差异属于同一文档库的修订，保留库 ID 并增量更新")
+        self.revision = QCheckBox("确认为同库修订")
         self.revision.toggled.connect(self.update_attach)
         self.revision.setVisible(False)
         layout.addWidget(self.revision)
-        self.attach_button = QPushButton("复制并复用索引")
+        self.attach_button = QPushButton("复用索引")
         self.attach_button.setEnabled(False)
         self.root.setEnabled(False)
         self.browse.setEnabled(False)
@@ -81,19 +81,11 @@ class LibraryDialog(QDialog):
 
     def status_loaded(self, info):
         self.summary.setText(
-            f"库 ID：{info['library_id']}\n文章 {info['documents']} "
-            f"· 章节块 {info['chunks']} · 文件 {info['files']}\n"
-            + (
-                "完整清单已就绪"
-                if info["manifest_verified"]
-                else "请先通过更多菜单完整更新索引，才能验证迁移副本"
-            )
+            f"{info['documents']} 篇文章 · {info['files']} 个文件 · "
+            + ("已就绪" if info["manifest_verified"] else "待更新")
         )
-        self.details.setPlainText(
-            "副本验证会完整读取文档、图片和示例文件。\n"
-            "一致副本保留库 ID、译文缓存、阅读位置和用户术语。\n"
-            "复用时创建新的索引副本，原数据库保持原有绑定。"
-        )
+        self.summary.setToolTip("库 ID：" + info["library_id"])
+        self.details.clear()
 
     def run(self, work, done):
         if self.busy:
@@ -134,9 +126,7 @@ class LibraryDialog(QDialog):
         self.revision.setVisible(False)
 
     def choose_root(self):
-        root = QFileDialog.getExistingDirectory(
-            self, "选择包含 online 的文档副本", self.root.text()
-        )
+        root = QFileDialog.getExistingDirectory(self, "选择文档副本", self.root.text())
         if root:
             self.root.setText(root)
 
@@ -163,7 +153,7 @@ class LibraryDialog(QDialog):
                 f"副本一致，共 {result['files']} 个文件。"
                 if result["matched"]
                 else f"副本存在差异：新增 {len(result['added'])}、删除 {len(result['removed'])}、"
-                f"修改 {len(result['modified'])}。\n其他版本应作为新库；仅同库修订才保留 ID。"
+                f"修改 {len(result['modified'])}。"
             )
             for key, label in (("added", "新增"), ("removed", "删除"), ("modified", "修改")):
                 if result[key]:
@@ -198,7 +188,8 @@ class LibraryDialog(QDialog):
             )
             self.verification = None
             self.details.setPlainText("已使用：" + str(destination))
-            self.summary.setText("库 ID：" + result["library_id"])
+            self.summary.setText("文档库已切换")
+            self.summary.setToolTip("库 ID：" + result["library_id"])
 
         self.run(
             lambda progress: attach_copy(
@@ -210,7 +201,7 @@ class LibraryDialog(QDialog):
     def backup(self):
         destination, _ = QFileDialog.getSaveFileName(
             self,
-            "导出一致性快照（请选择新文件）",
+            "导出快照",
             str(self.window.settings.database.parent / "library-snapshot.sqlite3"),
             "SQLite (*.sqlite3)",
         )
@@ -250,7 +241,8 @@ class TermsDialog(QDialog):
         form = QFormLayout()
         self.alias, self.english = QLineEdit(), QLineEdit()
         form.addRow("术语别名", self.alias)
-        form.addRow("英文关键词（同义词用 | 分隔）", self.english)
+        form.addRow("英文关键词", self.english)
+        self.english.setPlaceholderText("同义词用 | 分隔")
         self.scope = QComboBox()
         self.scope.addItem("全部功能", "")
         for manual in window.catalog.manuals.values():
@@ -258,7 +250,7 @@ class TermsDialog(QDialog):
         form.addRow("作用范围", self.scope)
         layout.addLayout(form)
         buttons = QHBoxLayout()
-        self.save = QPushButton("保存用户别名")
+        self.save = QPushButton("保存别名")
         self.save.clicked.connect(self.store)
         self.remove = QPushButton("移除用户覆盖")
         self.remove.clicked.connect(self.delete)
@@ -314,9 +306,7 @@ class TermsDialog(QDialog):
                 self.table.setItem(row, column, QTableWidgetItem(value))
         self.table.resizeColumnsToContents()
         self.filter_rows()
-        self.note.setText(
-            "用户别名实时用于查询展开，不需重建索引。限定范围也适用于包含该手册的分类。"
-        )
+        self.note.clear()
 
     def filter_rows(self):
         text = self.filter.text().strip().casefold()

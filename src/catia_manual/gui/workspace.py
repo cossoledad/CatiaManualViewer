@@ -80,10 +80,13 @@ class WorkspaceUI:
     def build_interface(self):
         self.setWindowTitle(APP_NAME)
         self.setWindowIcon(app_icon())
+        remember = self.settings.appearance.get("remember_window", True)
         self.resize(
-            int(self.settings.appearance.get("window_width", 1480)),
-            int(self.settings.appearance.get("window_height", 940)),
+            int(self.settings.appearance.get("window_width", 1480)) if remember else 1480,
+            int(self.settings.appearance.get("window_height", 940)) if remember else 940,
         )
+        if remember and self.settings.appearance.get("window_maximized", False):
+            self.setWindowState(Qt.WindowState.WindowMaximized)
         self.setMinimumSize(1060, 680)
         self.setStyleSheet(STYLESHEET)
         container = QWidget()

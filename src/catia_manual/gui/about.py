@@ -37,14 +37,9 @@ class AboutDialog(QDialog):
         header.addLayout(titles)
         header.addStretch()
         layout.addLayout(header)
-        description = QLabel("让 CATIA V5 手册更易查找与阅读。\n功能导航 · 中英文检索 · 双语阅读")
+        description = QLabel("CATIA V5 文档阅读器")
         description.setWordWrap(True)
         layout.addWidget(description)
-        link = QLabel(
-            '<a href="https://github.com/cossoledad/CatiaManualViewer">项目主页与版本更新 ↗</a>'
-        )
-        link.setOpenExternalLinks(True)
-        layout.addWidget(link)
         label = QLabel("当前文档库")
         label.setObjectName("sectionTitle")
         layout.addWidget(label)
@@ -53,13 +48,6 @@ class AboutDialog(QDialog):
         library.setTextFormat(Qt.TextFormat.PlainText)
         library.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         layout.addWidget(library)
-        credit = QLabel(
-            "基于 Python、Qt / PySide6、SQLite 和 lxml。\n"
-            "独立开发的文档阅读工具。CATIA 及原始手册属于其各自权利人。"
-        )
-        credit.setObjectName("muted")
-        credit.setWordWrap(True)
-        layout.addWidget(credit)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
         buttons.button(QDialogButtonBox.StandardButton.Close).setText("关闭")
         buttons.rejected.connect(self.reject)

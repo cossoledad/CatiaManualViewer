@@ -57,6 +57,7 @@ settings = replace(
     database=database,
     config_path=folder / "config.toml",
     translation={"provider": "glossary", "automatic": False},
+    search={"mode": "keyword"},
     appearance={"remember_window": False, "reading_mode": "original", "show_tools": True},
 )
 app = QApplication([])
@@ -142,7 +143,9 @@ try:
     dialogs.append(dialog)
     dialog.show()
     wait(lambda: not dialog.busy)
-    check(identity in dialog.summary.text(), "library management displays the registered identity")
+    check(
+        identity in dialog.summary.toolTip(), "library management retains the registered identity"
+    )
     dialog.root.setText(str(target))
     dialog.verify_index(database, target)
     wait(lambda: not dialog.busy)

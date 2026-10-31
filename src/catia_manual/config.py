@@ -20,6 +20,7 @@ APPEARANCE = {
     "remember_window": True,
     "window_width": 1480,
     "window_height": 940,
+    "window_maximized": False,
 }
 
 
@@ -146,6 +147,17 @@ def save_settings(settings: Settings, changes: dict) -> Settings:
         if section not in document:
             document[section] = tomlkit.table()
         values = {**dict(document[section]), **defaults, **changes.get(section, {})}
+        if section == "translation":
+            # Test-only overrides must never be promoted into a persistent configuration.
+            def persistent(value):
+                return {
+                    k: persistent(v) if isinstance(v, dict) else v
+                    for k, v in value.items()
+                    if k != "api_key_override"
+                }
+
+            values = persistent(values)
+            document[section].pop("api_key_override", None)
         for key, value in values.items():
             if key in {"root", "database", "launcher", "environment_dir", "model_dir"}:
                 candidate = Path(value).expanduser()

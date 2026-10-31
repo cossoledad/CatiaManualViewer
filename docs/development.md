@@ -77,13 +77,16 @@ JSON CLI 和 `core` 不依赖 Qt。调用时使用参数列表，并以 UTF-8 �
 .\.venv\Scripts\python.exe scripts/verify_stage_c_gui.py
 .\.venv\Scripts\python.exe scripts/verify_stage_c_real.py
 .\.venv\Scripts\python.exe scripts/verify_ui_polish.py
+.\.venv\Scripts\python.exe scripts/verify_settings_persistence.py
 ```
 
 原生 GUI 验证会短暂显示窗口，使用独立测试配置和离线模型；示例链接被捕获，不实际启动 CATIA。阶段 2 验证选词 / 句子 / 过期请求 / 链接 / 导航；阶段 3 验证分类 / 设置 / 迁移 / 侧键；阶段 4 验证新按钮 / 菜单 / 底栏。截图和 JSON 报告在忽略提交的 `data` 中。
 
 `scripts/setup_translation.py` 安装英中双向模型；`scripts/build_icons.py` 重建应用位图。二者均属于开发工具。当前环境的固定依赖版本见 `requirements.lock.txt`。
 
-`verify_ui_polish.py` 使用独立构造文档、模拟翻译与浏览器调用，检查中英匹配高亮、原文不变、渐进翻译与来源标记、历史恢复、侧栏零宽度恢复、首次页面切换与最大化状态、窄窗口布局、原文菜单、关于页和白底图标。报告及截图在 `data/ui-polish*`，不加入 CI。
+`verify_ui_polish.py` 使用独立构造文档、模拟翻译与浏览器调用，检查中英匹配高亮、原文不变、渐进翻译与来源标记、历史恢复、侧栏零宽度恢复、首次页面切换与最大化状态、窄窗口布局、原文菜单、关于页和透明图标。报告及截图在 `data/ui-polish*`，不加入 CI。
+
+`verify_settings_persistence.py` 使用合成 Key 验证多服务隔离、加密保存、设置重开、清除、取消、测试连接、不可解密时的保留与提示、精简后的窗口、模型目录和窗口状态持久化；不访问网络，不加载模型或启动 CATIA。`test_credentials.py` 另以新进程验证真实 DPAPI 解密。密钥只以密文进入 TOML，不进入模型名称、缓存身份或发行默认值；临时 api_key_override 被保存层过滤。DPAPI 范围及迁移限制见 [Microsoft 文档](https://learn.microsoft.com/en-us/windows/win32/api/dpapi/nf-dpapi-cryptprotectdata)。
 
 `verify_stage5_gui.py` 使用构造语料及可控 provider，检查渐进加载、优先级、暂停、失败重试、三种模式、锚点、历史位置和 SQLite 复用。`verify_real_page_translation.py` 使用真实 Creating Pads 和离线模型。`verify_stage_a_gui.py` 使用构造语料与模拟外部操作，检查模式持久化、能力降级、双击、图片预览和状态优先级。以上验证均在本机手动运行，不接入 CI。
 

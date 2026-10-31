@@ -995,7 +995,6 @@ class MainWindow(
         try:
             changes = dialog.changes()
             updated = save_settings(self.settings, changes)
-            dialog.translation.apply_session_key()
             self.apply_settings(updated)
         except Exception as exc:
             self.show_error(str(exc))
@@ -1065,9 +1064,16 @@ class MainWindow(
             preview.close()
         if self.settings.appearance.get("remember_window", True):
             try:
+                geometry = self.normalGeometry()
                 self.settings = save_settings(
                     self.settings,
-                    {"appearance": {"window_width": self.width(), "window_height": self.height()}},
+                    {
+                        "appearance": {
+                            "window_width": geometry.width(),
+                            "window_height": geometry.height(),
+                            "window_maximized": self.isMaximized(),
+                        }
+                    },
                 )
             except OSError:
                 pass

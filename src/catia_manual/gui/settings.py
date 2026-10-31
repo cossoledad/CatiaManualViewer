@@ -19,7 +19,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from catia_manual.core.credentials import set_session_key
+from catia_manual.core.credentials import protect_key, unprotect_key
 from catia_manual.core.providers import PROVIDERS, provider_profile
 
 
@@ -28,12 +28,13 @@ class TranslationSettings(QDialog):
         super().__init__(parent)
         self._base_config = deepcopy(config)
         self._profiles = deepcopy(config.get("profiles", {}))
-        self._session_values = {}
+        self._draft_keys = {}
         self._current_provider = config.get("provider", "local")
         profile = provider_profile(config, self._current_provider)
+        self._profiles[self._current_provider] = profile
         if embedded:
             self.setWindowFlags(Qt.WindowType.Widget)
-        self.setWindowTitle("翻译服务与划词设置")
+        self.setWindowTitle("翻译设置")
         self.setMinimumWidth(540)
         layout = QVBoxLayout(self)
         form = QFormLayout()
@@ -46,36 +47,35 @@ class TranslationSettings(QDialog):
         )
         form.addRow("翻译服务", self.provider)
         self.endpoint = QLineEdit(profile.get("endpoint", ""))
-        self.endpoint.setPlaceholderText("https://服务地址/v1 或完整翻译接口地址")
+        self.endpoint.setPlaceholderText("https://…")
         form.addRow("服务地址", self.endpoint)
         self.model = QLineEdit(profile.get("model", ""))
-        self.model.setPlaceholderText("服务提供的模型名称")
+        self.model.setPlaceholderText("模型名称")
         form.addRow("模型名称", self.model)
         self.key_env = QLineEdit(profile.get("api_key_env", "CATIA_TRANSLATION_API_KEY"))
-        form.addRow("API Key 环境变量名", self.key_env)
+        form.addRow("Key 环境变量", self.key_env)
         self.key = QLineEdit()
         self.key.setEchoMode(QLineEdit.EchoMode.Password)
-        self.key.setPlaceholderText("仅本次运行；留空则使用环境变量中的 Key")
+        self.key.setPlaceholderText("API Key")
+        self.key.setToolTip("加密保存；留空使用环境变量")
         form.addRow("API Key", self.key)
-        self.automatic = QCheckBox("选中单词或句子后自动翻译")
+        self.restore_key(profile)
+        self.automatic = QCheckBox("划词即译")
         self.automatic.setChecked(config.get("automatic", True))
         form.addRow(self.automatic)
         self.delay = QSpinBox()
         self.delay.setRange(150, 2000)
         self.delay.setSuffix(" ms")
         self.delay.setValue(int(config.get("selection_delay_ms", 350)))
-        form.addRow("选区稳定等待", self.delay)
+        form.addRow("划词延迟", self.delay)
         self.max_chars = QSpinBox()
         self.max_chars.setRange(100, 10000)
         self.max_chars.setValue(int(config.get("max_selection_chars", 3000)))
-        form.addRow("单次自动翻译字符上限", self.max_chars)
+        form.addRow("字符上限", self.max_chars)
         self.provider.currentIndexChanged.connect(self.provider_changed)
         self.update_fields()
         layout.addLayout(form)
-        note = QLabel("在线源会接收所选文字。密钥仅用于本次运行。")
-        note.setWordWrap(True)
-        layout.addWidget(note)
-        self.test_button = QPushButton("测试当前服务")
+        self.test_button = QPushButton("测试连接")
         self.test_button.clicked.connect(self.test_service)
         layout.addWidget(self.test_button)
         self.test_result = QLabel("")
@@ -95,15 +95,29 @@ class TranslationSettings(QDialog):
             self.buttons.hide()
 
     def remember_profile(self):
-        if self.key.text():
-            self._session_values[self.key_env.text().strip()] = self.key.text()
-        else:
-            self._session_values.pop(self.key_env.text().strip(), None)
+        # Preserve an unreadable credential on an unrelated save (e.g. after migration).
+        if not self._key_unreadable or self.key.text() or self.key.isModified():
+            self._draft_keys[self._current_provider] = self.key.text().strip()
         self._profiles[self._current_provider] = {
+            **self._profiles.get(self._current_provider, {}),
             "endpoint": self.endpoint.text().strip(),
             "model": self.model.text().strip(),
             "api_key_env": self.key_env.text().strip(),
         }
+
+    def restore_key(self, profile):
+        self._key_unreadable = False
+        self.key.setPlaceholderText("API Key")
+        try:
+            value = self._draft_keys.get(self._current_provider)
+            if value is None:
+                value = unprotect_key(profile.get("api_key_encrypted", ""))
+            self.key.setText(value)
+        except ValueError:
+            self._key_unreadable = True
+            self.key.clear()
+            self.key.setPlaceholderText("请重新填写 Key")
+        self.key.setModified(False)
 
     def provider_changed(self):
         self.remember_profile()
@@ -112,8 +126,7 @@ class TranslationSettings(QDialog):
         self.endpoint.setText(profile.get("endpoint", ""))
         self.model.setText(profile.get("model", ""))
         self.key_env.setText(profile.get("api_key_env", "CATIA_TRANSLATION_API_KEY"))
-        self.key.clear()
-        self.key.setText(self._session_values.get(self.key_env.text().strip(), ""))
+        self.restore_key(profile)
         self.test_result.clear()
         self.update_fields()
 
@@ -130,6 +143,20 @@ class TranslationSettings(QDialog):
 
     def values(self) -> dict:
         self.remember_profile()
+        if any(
+            "=" in p.get("api_key_env", "") or "\x00" in p.get("api_key_env", "")
+            for p in self._profiles.values()
+        ):
+            raise ValueError("Key 环境变量名无效")
+        profiles = deepcopy(self._profiles)
+        for name, key in self._draft_keys.items():
+            previous = profiles[name].get("api_key_encrypted", "")
+            try:
+                unchanged = unprotect_key(previous) == key
+            except ValueError:
+                unchanged = False
+            profiles[name]["api_key_encrypted"] = previous if unchanged else protect_key(key)
+        self._profiles = profiles
         return {
             "provider": self.provider.currentData(),
             "endpoint": self.endpoint.text().strip(),
@@ -139,23 +166,23 @@ class TranslationSettings(QDialog):
             "selection_delay_ms": self.delay.value(),
             "max_selection_chars": self.max_chars.value(),
             "target_language": "zh-CN",
-            "profiles": deepcopy(self._profiles),
+            "profiles": profiles,
+            "api_key_encrypted": profiles[self._current_provider].get("api_key_encrypted", ""),
         }
-
-    def apply_session_key(self):
-        self.remember_profile()
-        for variable, value in self._session_values.items():
-            if not variable or "=" in variable or "\x00" in variable:
-                raise ValueError("API Key 环境变量名无效")
-            set_session_key(variable, value)
 
     def test_service(self):
         from catia_manual.core.translation import make_provider
         from catia_manual.gui.app import Job
 
         try:
-            config = {**self._base_config, **self.values()}
-            config["api_key_override"] = self.key.text()
+            config = {
+                **self._base_config,
+                "provider": self.provider.currentData(),
+                "endpoint": self.endpoint.text().strip(),
+                "model": self.model.text().strip(),
+                "api_key_env": self.key_env.text().strip(),
+                "api_key_override": self.key.text().strip(),
+            }
             provider = make_provider(config)
         except Exception as exc:
             self.test_result.setText(str(exc))
@@ -178,7 +205,7 @@ class TranslationSettings(QDialog):
 
     def closeEvent(self, event):
         if self.jobs:
-            self.test_result.setText("服务测试尚未结束，请稍候关闭。")
+            self.test_result.setText("测试中…")
             event.ignore()
         else:
             event.accept()
@@ -207,7 +234,7 @@ class GlobalSettings(QDialog):
         )
         from PySide6.QtWidgets import QGroupBox
 
-        catia = QGroupBox("CATIA（可选，仅用于打开示例）")
+        catia = QGroupBox("CATIA（可选）")
         catia_form = QFormLayout(catia)
         self.launcher = self.path_field(catia_form, "启动器", str(settings.launcher), file=True)
         self.environment_dir = self.path_field(
@@ -216,10 +243,6 @@ class GlobalSettings(QDialog):
         self.environment = QLineEdit(settings.environment)
         catia_form.addRow("环境名称", self.environment)
         form.addRow(catia)
-        hint = QLabel("文档目录应包含 online 文件夹。仅阅读文档时无需安装 CATIA。")
-        hint.setWordWrap(True)
-        hint.setObjectName("muted")
-        form.addRow(hint)
         self.tabs.addTab(general, "文档与 CATIA")
         self.translation = TranslationSettings(settings.translation, parent, embedded=True)
         self.tabs.addTab(self.translation, "翻译")
@@ -246,12 +269,6 @@ class GlobalSettings(QDialog):
         self.search_threads.setRange(1, 8)
         self.search_threads.setValue(int(settings.search.get("threads", 2)))
         search_form.addRow("推理线程", self.search_threads)
-        search_note = QLabel(
-            "通过更多菜单的‘智能搜索’下载模型并建立索引。语义搜索在本机运行；"
-            "模型或索引不可用时显示关键词结果。"
-        )
-        search_note.setWordWrap(True)
-        search_form.addRow(search_note)
         self.tabs.addTab(search, "搜索")
         appearance = QWidget()
         visual = QFormLayout(appearance)
@@ -272,8 +289,8 @@ class GlobalSettings(QDialog):
         self.reading_mode.setCurrentIndex(
             max(0, self.reading_mode.findData(settings.appearance.get("reading_mode", "original")))
         )
-        visual.addRow("阅读模式（跨页保留）", self.reading_mode)
-        self.tools = QCheckBox("显示翻译与示例侧栏")
+        visual.addRow("阅读模式", self.reading_mode)
+        self.tools = QCheckBox("阅读侧栏")
         self.tools.setChecked(settings.appearance.get("show_tools", True))
         visual.addRow(self.tools)
         self.remember_window = QCheckBox("记住窗口大小")
@@ -354,6 +371,12 @@ class GlobalSettings(QDialog):
     def accept(self):
         if self.translation.jobs:
             self.note.setText("翻译测试尚未结束。")
+            return
+        try:
+            self.translation.values()
+        except ValueError as exc:
+            self.tabs.setCurrentIndex(1)
+            self.note.setText(str(exc))
             return
         base = self.original.config_path.parent if self.original.config_path else Path.cwd()
         root = Path(self.root.text().strip()).expanduser()

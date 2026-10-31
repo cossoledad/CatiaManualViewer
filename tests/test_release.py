@@ -93,15 +93,19 @@ def test_publish_does_not_overwrite_public_release(tmp_path, monkeypatch):
     assert len(calls) == 1 and calls[0][2] == "view"
 
 
-@pytest.mark.parametrize("invalid_field", ["path", "credential"])
+@pytest.mark.parametrize("invalid_field", ["path", "credential", "encrypted_credential"])
 def test_archive_rejects_machine_paths_or_credentials(tmp_path, invalid_field):
     bad_config = (release.PROJECT / "packaging/config.default.toml").read_text("utf-8")
     bad_config = bad_config.replace("provider = 'glossary'", "provider = 'local'")
     if invalid_field == "path":
         bad_config = bad_config.replace("root = 'manuals/English'", "root = 'C:\\private'")
-    else:
+    elif invalid_field == "credential":
         bad_config = bad_config.replace(
             "provider = 'local'", "provider = 'local'\napi_key='test-secret'"
+        )
+    else:
+        bad_config = bad_config.replace(
+            "provider = 'local'", "provider = 'local'\napi_key_encrypted='dpapi:v1:fixture'"
         )
     archive = make_archive(tmp_path, **{"config.default.toml": bad_config})
     with pytest.raises(ValueError, match="绝对路径|密钥"):

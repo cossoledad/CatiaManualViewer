@@ -269,8 +269,8 @@ try:
     dialog.close()
     image = QImage(str(project / "src/catia_manual/assets/app.png"))
     check(
-        image.pixelColor(0, 0).name() == "#ffffff" and image.pixelColor(0, 0).alpha() == 255,
-        "application icon has an opaque white background",
+        image.pixelColor(0, 0).alpha() == 0,
+        "application icon has a transparent background",
     )
     window.grab().save(str(output / "ui-polish-compact.png"))
 except Exception as exc:
