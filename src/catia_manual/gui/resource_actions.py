@@ -183,7 +183,7 @@ class ResourceActions:
         except (ValueError, OSError) as exc:
             self.show_error(str(exc))
 
-    def add_resource_actions(self, menu, relative, *, image=False):
+    def add_resource_actions(self, menu, relative, *, image=False, preview=None):
         try:
             path = self.resources.path(relative, must_exist=False)
         except (ValueError, OSError):
@@ -192,7 +192,7 @@ class ResourceActions:
         if image:
             action = menu.addAction("预览图片")
             action.setEnabled(exists)
-            action.triggered.connect(lambda: self.preview_image(relative))
+            action.triggered.connect(lambda: (preview or self.preview_image)(relative))
         else:
             self.refresh_capabilities(probe=True)
             action = menu.addAction("在 CATIA 中打开")

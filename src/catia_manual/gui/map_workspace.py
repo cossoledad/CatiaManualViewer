@@ -1,6 +1,7 @@
 """Functional-map workspace/history adapter; all hierarchy queries run off the GUI thread."""
 
 import json
+from contextlib import contextmanager
 from copy import deepcopy
 
 from PySide6.QtCore import Qt, QTimer
@@ -14,19 +15,31 @@ from catia_manual.core.navigation import Location
 class MapWorkspace:
     def init_function_map(self):
         self.map_generation = 0
+        self.graph_changing = False
         self.pending_map_save = None
         self.last_map_save = None
         self.map_save_timer = QTimer(self)
         self.map_save_timer.setSingleShot(True)
         self.map_save_timer.timeout.connect(self.flush_map_state)
 
+    @contextmanager
+    def graph_transition(self):
+        self.graph_changing = True
+        try:
+            yield
+        finally:
+            self.graph_changing = False
+
     def map_active(self):
-        return self.center_stack.currentWidget() == self.function_map
+        return self.center_stack.currentWidget() in (self.function_map, self.relation_graph)
 
     def map_chrome(self, active):
         self.map_button.blockSignals(True)
-        self.map_button.setChecked(active)
+        relation = active and self.relation_active()
+        self.map_button.setChecked(active and not relation)
         self.map_button.blockSignals(False)
+        self.relation_button.setChecked(relation)
+        self.relation_button.setEnabled(bool(self.current_document or active))
         self.reading_controls.setVisible(not active)
         self.focus_button.setVisible(not active)
         self.tools_button.setEnabled(not active)
@@ -40,7 +53,7 @@ class MapWorkspace:
             self.breadcrumb.clear()
             self.reference_reading.hide()
             self.other_positions.hide()
-            self.page_title.setText("功能地图")
+            self.page_title.setText("页面关系图" if relation else "功能地图")
 
     def toggle_function_map(self, enabled):
         if enabled:
@@ -77,6 +90,11 @@ class MapWorkspace:
         }
 
     def save_map_location(self):
+        if self.graph_changing:
+            return
+        if self.relation_active():
+            self.save_relation_location()
+            return
         if not self.map_active():
             return
         state = self.map_state()
@@ -90,6 +108,7 @@ class MapWorkspace:
             self.map_save_timer.start(700)
 
     def flush_map_state(self):
+        self.flush_relation_state()
         self.map_save_timer.stop()
         pending, self.pending_map_save = self.pending_map_save, None
         if pending:
@@ -113,12 +132,12 @@ class MapWorkspace:
         terms=None,
     ):
         self.save_location_scroll()
-        focus = self.reading_map_focus()
+        focus = self.reading_map_focus() or self.relation_focus()
         reading = focus
         if not reading and self.current_document:
             placement = (getattr(self, "current_navigation", None) or {}).get("selected") or {}
             reading = {"path": self.current_document.path, "manual": placement.get("manual", "")}
-        previous_map = self.map_active()
+        previous_map = self.center_stack.currentWidget() == self.function_map
         if request is None:
             if previous_map:
                 request = deepcopy(self.function_map.snapshot.request)
@@ -170,14 +189,17 @@ class MapWorkspace:
             snapshot, restored = result
             self.page_loading = False
             self.requested_history_position = None
-            self.center_stack.setCurrentWidget(self.function_map)
-            self.map_chrome(True)
-            self.map_search_terms = list(terms)
-            self.function_map.set_snapshot(snapshot, restored, terms=terms, reading=reading)
-            if history_index is not None:
-                self.history.jump(history_index)
-            elif not refresh:
-                self.history.visit(Location("@map", title="功能地图", map_state=self.map_state()))
+            with self.graph_transition():
+                self.center_stack.setCurrentWidget(self.function_map)
+                self.map_chrome(True)
+                self.map_search_terms = list(terms)
+                self.function_map.set_snapshot(snapshot, restored, terms=terms, reading=reading)
+                if history_index is not None:
+                    self.history.jump(history_index)
+                elif not refresh:
+                    self.history.visit(
+                        Location("@map", title="功能地图", map_state=self.map_state())
+                    )
             self.return_results.hide()
             self.update_history_actions()
             self.save_map_location()
@@ -321,6 +343,14 @@ class MapWorkspace:
         menu = QMenu(self)
         node = item.node
         if node["document_ref"]:
+            menu.addAction("页面关系图").triggered.connect(
+                lambda: self.show_relation_graph(
+                    request={
+                        "path": node["document_ref"]["path"],
+                        "manual": (node["placement_context"] or {}).get("manual", ""),
+                    }
+                )
+            )
             menu.addAction("打开文章").triggered.connect(lambda: self.open_map_node(node["id"]))
             self.add_original_action(menu, node["document_ref"]["path"], node["fragment"])
         if node["children"]:

@@ -52,6 +52,7 @@ from catia_manual.core.translation import TranslationService, make_provider
 from catia_manual.gui.map_workspace import MapWorkspace
 from catia_manual.gui.page_reader import PageReader
 from catia_manual.gui.reading_navigation import ReadingNavigation
+from catia_manual.gui.relation_workspace import RelationWorkspace
 from catia_manual.gui.resource_actions import ResourceActions, ResourceBridge
 from catia_manual.gui.search_focus import TERMS_ROLE, SearchFocus, focus_terms, snippet_text
 from catia_manual.gui.settings import GlobalSettings
@@ -118,6 +119,7 @@ class ReaderPage(QWebEnginePage):
 
 
 class MainWindow(
+    RelationWorkspace,
     MapWorkspace,
     SearchFocus,
     ReadingNavigation,
@@ -160,6 +162,7 @@ class MainWindow(
         self.selection_timer.timeout.connect(self.translate_selection)
         self.init_page_reader()
         self.init_function_map()
+        self.init_relations()
         self.build_interface()
         self.refresh_capabilities(probe=True)
         self.update_history_actions()
@@ -321,7 +324,9 @@ class MainWindow(
         dialog.exec()
         dialog.deleteLater()
 
-    def open_source(self, value, history_index=None, placement=None, search_terms=None):
+    def open_source(
+        self, value, history_index=None, placement=None, search_terms=None, element_location=None
+    ):
         if history_index is not None:
             placement = self.history.entries[history_index].placement
         try:
@@ -369,6 +374,7 @@ class MainWindow(
                 source_location=result.source.to_dict(),
                 placement=placement,
                 search_terms=search_terms,
+                element_location=element_location,
             )
             if result.status.startswith("relocated"):
                 self.statusBar().showMessage("原文已修订，已重新定位来源", 4000)
@@ -384,6 +390,7 @@ class MainWindow(
         source_location: dict | None = None,
         placement: dict | None = None,
         search_terms: list[str] | None = None,
+        element_location: dict | None = None,
     ):
         self.statusBar().clear_source("source")
         self.save_location_scroll()
@@ -468,6 +475,7 @@ class MainWindow(
                 and self.current_document.content_hash == document.content_hash
             )
             self.current_document = document
+            self.pending_relation_element = element_location if history_index is None else None
             if not self.map_active():
                 self.details_pane.setVisible(self.settings.appearance.get("show_tools", True))
             self.requested_history_position = None
@@ -490,6 +498,7 @@ class MainWindow(
                 self.pending_restore = None
                 if self.history.current:
                     self.history.current.search_terms = search_terms
+                    self.history.current.element_location = element_location
             if source_location:
                 self.pending_reading_restore = {
                     "source_block": source_location.get("block_id", ""),
@@ -601,6 +610,7 @@ class MainWindow(
                 self.web.reveal()
                 self.statusBar().clear_source("navigation")
                 self.apply_reading_navigation()
+                self.restore_relation_element()
 
         QTimer.singleShot(40, reveal)
 
@@ -671,9 +681,19 @@ class MainWindow(
 
     def go_to_history(self, position):
         location = self.history.entries[position]
+        if location.path == "@relations" and location.relation_state:
+            self.show_relation_graph(
+                request=location.relation_state["request"],
+                state=location.relation_state,
+                history_index=position,
+            )
+            return
         if location.path == "@map" and location.map_state:
-            self.show_function_map(request=location.map_state["request"], state=location.map_state,
-                                   history_index=position)
+            self.show_function_map(
+                request=location.map_state["request"],
+                state=location.map_state,
+                history_index=position,
+            )
             return
         if location.path == "@home" or location.path.startswith("@category:"):
             category = (
@@ -1053,6 +1073,7 @@ class MainWindow(
             self.reload_catalog()
             self.results.clear()
             self.function_map.snapshot = None
+            self.relation_graph.snapshot = None
             self.translation.clear()
             self.show_home()
         else:

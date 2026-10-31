@@ -26,6 +26,7 @@ from PySide6.QtWidgets import (
 from catia_manual.core.catalog import ManualCatalog
 from catia_manual.core.navigation import Location
 from catia_manual.gui.function_map import FunctionMapWidget
+from catia_manual.gui.relations import RelationGraphWidget
 from catia_manual.gui.search_focus import MatchDelegate
 from catia_manual.gui.style import APP_NAME, STYLESHEET, app_icon, icon
 from catia_manual.gui.widgets import ElidedLabel, SearchField
@@ -239,6 +240,14 @@ class WorkspaceUI:
         self.map_button.setAccessibleName("功能地图")
         self.map_button.clicked.connect(self.toggle_function_map)
         nav.addWidget(self.map_button)
+        self.relation_button = QToolButton()
+        self.relation_button.setIcon(icon("relations"))
+        self.relation_button.setCheckable(True)
+        self.relation_button.setEnabled(False)
+        self.relation_button.setToolTip("页面关系图")
+        self.relation_button.setAccessibleName("页面关系图")
+        self.relation_button.clicked.connect(self.toggle_relations)
+        nav.addWidget(self.relation_button)
         self.tools_button = QToolButton()
         self.tools_button.setIcon(icon("tools"))
         self.tools_button.setCheckable(True)
@@ -296,8 +305,9 @@ class WorkspaceUI:
         self.function_map.drilled.connect(self.map_drill_node)
         self.function_map.upRequested.connect(self.map_up)
         self.function_map.allRequested.connect(
-            lambda: self.refresh_function_map({"scope": {"kind": "all"}},
-                                              reveal=True, keep_view=False)
+            lambda: self.refresh_function_map(
+                {"scope": {"kind": "all"}}, reveal=True, keep_view=False
+            )
         )
         self.function_map.currentRequested.connect(self.map_current)
         self.function_map.stateChanged.connect(self.save_map_location)
@@ -305,6 +315,26 @@ class WorkspaceUI:
         self.function_map.view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
         self.function_map.view.customContextMenuRequested.connect(self.map_context_menu)
         self.center_stack.addWidget(self.function_map)
+        self.relation_graph = RelationGraphWidget()
+        self.relation_graph.can_open = self.relation_can_open
+        self.relation_graph.opened.connect(self.open_relation_node)
+        self.relation_graph.toggled.connect(self.relation_toggle_node)
+        self.relation_graph.paged.connect(self.relation_page_node)
+        self.relation_graph.drilled.connect(self.relation_recenter)
+        self.relation_graph.typesChanged.connect(self.relation_types)
+        self.relation_graph.sourceRequested.connect(self.relation_sources)
+        self.relation_graph.stateChanged.connect(self.save_relation_location)
+        self.relation_graph.currentRequested.connect(
+            lambda: (
+                self.relation_graph.select(self.relation_graph.snapshot.root, center=True)
+                if self.relation_graph.snapshot
+                else None
+            )
+        )
+        self.relation_graph.view.viewport().installEventFilter(self)
+        self.relation_graph.view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.relation_graph.view.customContextMenuRequested.connect(self.relation_context_menu)
+        self.center_stack.addWidget(self.relation_graph)
         center.addWidget(self.center_stack, 1)
         self.split.addWidget(middle)
         self.details_pane = QWidget()

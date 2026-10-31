@@ -94,6 +94,7 @@ class GraphSnapshot:
     notice: str = ""
     parent: dict | None = None
     schema_version: int = MAP_VERSION
+    view: str = "function-map"
 
     def to_dict(self):
         return asdict(self)

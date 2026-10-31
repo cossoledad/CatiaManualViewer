@@ -43,6 +43,10 @@ def icon(name: str, color="#60758a") -> QIcon:
         "system": "M3 3h6v6H3zM15 15h6v6h-6zM6 9v9h9M15 3h6v6h-6zM18 9v6",
         "tool": "M8 3h8v7l-4 5-4-5zM12 15v5M3 21h18M6 5h2M16 5h2",
         "network": "M4 4h5v5H4zM15 15h5v5h-5zM15 3h5v5h-5zM9 6h6M6 9v9h9M17 8v7",
+        "relations": (
+            "M14 5a3 3 0 1 1-6 0 3 3 0 0 1 6 0M7 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0"
+            "M23 18a3 3 0 1 1-6 0 3 3 0 0 1 6 0M10 8l-4 7M13 8l5 7M7 18h10"
+        ),
     }
     source = (
         '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24">'

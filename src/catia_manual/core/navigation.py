@@ -14,6 +14,8 @@ class Location:
     placement: dict | None = None
     search_terms: list[str] | None = None
     map_state: dict | None = None
+    relation_state: dict | None = None
+    element_location: dict | None = None
 
 
 class NavigationHistory:
@@ -40,6 +42,9 @@ class NavigationHistory:
         current = self.current
 
         def context(entry):
+            if entry.path == "@relations":
+                request = (entry.relation_state or {}).get("request", {})
+                return (request.get("path"), request.get("manual"))
             if entry.path == "@map":
                 request = (entry.map_state or {}).get("request", {})
                 return json.dumps(

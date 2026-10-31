@@ -3,7 +3,7 @@
 import math
 
 from PySide6.QtCore import QPointF, QRectF, Qt, QTimer, Signal
-from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen
+from PySide6.QtGui import QColor, QFont, QPainter, QPainterPath, QPen, QPolygonF
 from PySide6.QtWidgets import (
     QApplication,
     QGraphicsItem,
@@ -22,7 +22,16 @@ from catia_manual.gui.style import icon
 from catia_manual.gui.widgets import ElidedLabel
 
 CARD_WIDTH, CARD_HEIGHT = 236, 84
-KINDS = {"library": "功能", "category": "功能分类", "manual": "手册", "placement": "章节"}
+KINDS = {
+    "library": "功能",
+    "category": "功能分类",
+    "manual": "手册",
+    "placement": "章节",
+    "article": "页面",
+    "command": "命令",
+    "sample": "示例",
+    "image": "图片",
+}
 
 
 def valid_position(value):
@@ -53,7 +62,10 @@ class MapNode(QGraphicsObject):
     def paint(self, painter, option, widget=None):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         selected = self.isSelected()
-        painter.setPen(QPen(QColor("#25898a" if selected else "#dce7ec"), 2 if selected else 1))
+        color = (
+            "#25898a" if selected else "#d49b50" if not self.node.get("exists", True) else "#dce7ec"
+        )
+        painter.setPen(QPen(QColor(color), 2 if selected else 1))
         painter.setBrush(QColor("#eef8f5" if selected else "#ffffff"))
         painter.drawRoundedRect(QRectF(0, 0, CARD_WIDTH, CARD_HEIGHT), 10, 10)
         label = self.node["label_zh"] or self.node["label_en"]
@@ -84,13 +96,22 @@ class MapNode(QGraphicsObject):
         )
         if self.current:
             painter.setPen(QColor("#197b7e"))
-            painter.drawText(QRectF(22, 60, 150, 16), "正在阅读")
+            painter.drawText(QRectF(22, 60, 150, 16), self.node.get("current_label", "正在阅读"))
+        elif self.node["kind"] in {"article", "command", "sample", "image"}:
+            painter.setPen(QColor("#8b7151" if not self.node.get("exists", True) else "#32878a"))
+            label = "文件缺失" if not self.node.get("exists", True) else KINDS[self.node["kind"]]
+            painter.drawText(QRectF(22, 60, 132, 16), label)
         if self.node["children"]:
-            icon("minus" if self.expanded else "plus", "#32878a").paint(painter, 207, 11, 18, 18)
+            if self.node.get("disclosure", True):
+                icon("minus" if self.expanded else "plus", "#32878a").paint(
+                    painter, 207, 11, 18, 18
+                )
             painter.drawText(
                 QRectF(160, 60, 62, 16),
                 Qt.AlignmentFlag.AlignRight,
-                str(self.node["children"]) + " 项",
+                str(self.node["children"]) + " 项"
+                if self.node.get("children_known", True)
+                else "可展开",
             )
 
     def mousePressEvent(self, event):
@@ -100,7 +121,7 @@ class MapNode(QGraphicsObject):
             and event.pos().x() > 204
             and event.pos().y() < 34
         ):
-            if self.node["children"]:
+            if self.node["children"] and self.node.get("disclosure", True):
                 self.toggled.emit(self.node["id"])
 
     def mouseDoubleClickEvent(self, event):
@@ -181,7 +202,7 @@ class FunctionMapWidget(QWidget):
         toolbar = QHBoxLayout()
         toolbar.setContentsMargins(8, 4, 8, 4)
         self.up_button = self.tool(toolbar, "up", "上一级", self.upRequested.emit)
-        self.tool(toolbar, "grid", "全部功能", self.allRequested.emit)
+        self.all_button = self.tool(toolbar, "grid", "全部功能", self.allRequested.emit)
         self.title = ElidedLabel("功能地图")
         toolbar.addWidget(self.title, 1)
         self.current_button = self.tool(
@@ -202,6 +223,7 @@ class FunctionMapWidget(QWidget):
         self.view.openSelected.connect(self.open_selected)
         self.view.toggleSelected.connect(self.toggle_selected)
         footer = QHBoxLayout()
+        self.footer = footer
         footer.setContentsMargins(12, 8, 12, 10)
         self.selection_title = ElidedLabel()
         preview = QVBoxLayout()
@@ -329,7 +351,11 @@ class FunctionMapWidget(QWidget):
         saved = {**previous, **state.get("positions", {})}
         self.positions = {}
         used = {}
-        parents = {edge["target"]: edge["source"] for edge in snapshot.edges}
+        parents = {
+            edge.get("layout_target", edge["target"]): edge.get("layout_source", edge["source"])
+            for edge in snapshot.edges
+            if edge.get("layout", True)
+        }
         depth = {snapshot.root: 0}
         for node in snapshot.nodes:
             cursor, trail = node["id"], []
@@ -361,7 +387,7 @@ class FunctionMapWidget(QWidget):
                         step += 1
                         y = base + ((step + 1) // 2) * 110 * (1 if step % 2 else -1)
                 occupied.append(y)
-                x = level * 292
+                x = position[0] if valid and getattr(self, "free_layout", False) else level * 292
                 self.positions[node["id"]] = [x, y]
                 item = MapNode(
                     node,
@@ -390,12 +416,29 @@ class FunctionMapWidget(QWidget):
             a, b = self.items.get(edge["source"]), self.items.get(edge["target"])
             if a is None or b is None:
                 continue
-            start = a.pos() + QPointF(CARD_WIDTH, CARD_HEIGHT / 2)
-            end = b.pos() + QPointF(0, CARD_HEIGHT / 2)
+            direction = 1 if b.x() > a.x() else -1
+            start = a.pos() + QPointF(CARD_WIDTH if direction > 0 else 0, CARD_HEIGHT / 2)
+            end = b.pos() + QPointF(0 if direction > 0 else CARD_WIDTH, CARD_HEIGHT / 2)
             path = QPainterPath(start)
-            path.cubicTo(start + QPointF(28, 0), end - QPointF(28, 0), end)
-            line = self.view.scene().addPath(path, QPen(QColor("#b6ced5"), 1.4))
+            path.cubicTo(start + QPointF(28 * direction, 0), end - QPointF(28 * direction, 0), end)
+            pen = QPen(QColor("#8aaeb8" if edge.get("label") else "#b6ced5"), 1.4)
+            if not edge.get("layout", True):
+                pen.setStyle(Qt.PenStyle.DashLine)
+            line = self.view.scene().addPath(path, pen)
             line.setZValue(-1)
+            if edge.get("label"):
+                line.setToolTip(edge["label"])
+                triangle = QPolygonF(
+                    [end, end + QPointF(-8 * direction, -4), end + QPointF(-8 * direction, 4)]
+                )
+                self.view.scene().addPolygon(triangle, pen, QColor("#8aaeb8")).setZValue(-1)
+                font = QFont(QApplication.font())
+                font.setPointSizeF(8)
+                label = self.view.scene().addSimpleText(edge["label"], font)
+                center = path.pointAtPercent(0.5)
+                label.setPos(center.x() - label.boundingRect().width() / 2, center.y() - 18)
+                label.setBrush(QColor("#638290"))
+                label.setZValue(-1)
         bounds = self.view.scene().itemsBoundingRect()
         self.view.scene().setSceneRect(bounds.adjusted(-300, -300, 300, 300))
         root = self.items.get(snapshot.root)
@@ -406,7 +449,7 @@ class FunctionMapWidget(QWidget):
         self.up_button.setEnabled(
             bool(
                 snapshot.parent
-                or snapshot.request["scope"]["kind"] != "all"
+                or snapshot.request.get("scope", {"kind": "all"})["kind"] != "all"
                 or snapshot.request.get("branch")
             )
         )
@@ -461,7 +504,11 @@ class FunctionMapWidget(QWidget):
         if not self.snapshot:
             return
         identity = self.selected_id()
-        parents = {e["target"]: e["source"] for e in self.snapshot.edges}
+        parents = {
+            e.get("layout_target", e["target"]): e.get("layout_source", e["source"])
+            for e in self.snapshot.edges
+            if e.get("layout", True)
+        }
         if key == Qt.Key.Key_Left:
             target = parents.get(identity)
         elif key == Qt.Key.Key_Right:

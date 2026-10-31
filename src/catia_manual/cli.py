@@ -50,6 +50,17 @@ def main(argv: list[str] | None = None) -> int:
     graph_scope.add_argument("--category")
     graph.add_argument("--focus", help="库内相对页面路径")
     graph.add_argument("--limit", type=int, default=80)
+    relations = sub.add_parser("relations", help="输出有原文依据的页面关系图 JSON")
+    relations.add_argument("path")
+    relations.add_argument("--manual", default="")
+    relations.add_argument(
+        "--type",
+        action="append",
+        dest="types",
+        choices=("references", "links_to", "documents_command", "has_sample", "has_image"),
+    )
+    relations.add_argument("--expand", action="append", default=[])
+    relations.add_argument("--limit", type=int, default=80)
     locations = sub.add_parser("locations", help="读取文章在各手册中的目录位置")
     locations.add_argument("path")
     locations.add_argument("--manual")
@@ -232,7 +243,19 @@ def main(argv: list[str] | None = None) -> int:
             emit([asdict(group) for group in ManualCatalog(settings.root).categories])
         else:
             with ManualIndex(settings.database, settings.root) as repository:
-                if args.command == "map":
+                if args.command == "relations":
+                    from catia_manual.core.relations import RelationService
+
+                    request = {
+                        "path": args.path,
+                        "manual": args.manual,
+                        "expanded": args.expand,
+                        "limit": args.limit,
+                    }
+                    if args.types is not None:
+                        request["types"] = args.types
+                    emit(RelationService(repository).map(request).to_dict())
+                elif args.command == "map":
                     from catia_manual.core.function_map import GraphService
 
                     scope = (
