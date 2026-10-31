@@ -44,6 +44,12 @@ def main(argv: list[str] | None = None) -> int:
     semantic = sub.add_parser("semantic", help="本机语义模型与增量向量索引")
     semantic.add_argument("action", choices=("status", "download", "build"))
     sub.add_parser("structure", help="增量整理目录、双语命令和文章搜索结构")
+    graph = sub.add_parser("map", help="输出只读功能地图 JSON")
+    graph_scope = graph.add_mutually_exclusive_group()
+    graph_scope.add_argument("--manual")
+    graph_scope.add_argument("--category")
+    graph.add_argument("--focus", help="库内相对页面路径")
+    graph.add_argument("--limit", type=int, default=80)
     locations = sub.add_parser("locations", help="读取文章在各手册中的目录位置")
     locations.add_argument("path")
     locations.add_argument("--manual")
@@ -226,7 +232,21 @@ def main(argv: list[str] | None = None) -> int:
             emit([asdict(group) for group in ManualCatalog(settings.root).categories])
         else:
             with ManualIndex(settings.database, settings.root) as repository:
-                if args.command == "index":
+                if args.command == "map":
+                    from catia_manual.core.function_map import GraphService
+
+                    scope = (
+                        {"kind": "manual", "id": args.manual}
+                        if args.manual
+                        else {"kind": "category", "id": args.category}
+                        if args.category
+                        else {"kind": "all"}
+                    )
+                    query = {"scope": scope, "limit": args.limit}
+                    if args.focus:
+                        query["focus"] = {"path": args.focus, "manual": args.manual or ""}
+                    emit(GraphService(repository).map(query).to_dict())
+                elif args.command == "index":
                     result = repository.build(
                         args.module,
                         args.limit,

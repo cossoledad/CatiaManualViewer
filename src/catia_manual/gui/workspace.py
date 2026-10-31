@@ -25,6 +25,7 @@ from PySide6.QtWidgets import (
 
 from catia_manual.core.catalog import ManualCatalog
 from catia_manual.core.navigation import Location
+from catia_manual.gui.function_map import FunctionMapWidget
 from catia_manual.gui.search_focus import MatchDelegate
 from catia_manual.gui.style import APP_NAME, STYLESHEET, app_icon, icon
 from catia_manual.gui.widgets import ElidedLabel, SearchField
@@ -228,9 +229,16 @@ class WorkspaceUI:
         self.focus_action.setChecked(True)
         self.focus_action.setEnabled(False)
         self.focus_action.triggered.connect(lambda: self.update_search_focus())
-        focus_button = QToolButton()
-        focus_button.setDefaultAction(self.focus_action)
-        nav.addWidget(focus_button)
+        self.focus_button = QToolButton()
+        self.focus_button.setDefaultAction(self.focus_action)
+        nav.addWidget(self.focus_button)
+        self.map_button = QToolButton()
+        self.map_button.setIcon(icon("network"))
+        self.map_button.setCheckable(True)
+        self.map_button.setToolTip("功能地图")
+        self.map_button.setAccessibleName("功能地图")
+        self.map_button.clicked.connect(self.toggle_function_map)
+        nav.addWidget(self.map_button)
         self.tools_button = QToolButton()
         self.tools_button.setIcon(icon("tools"))
         self.tools_button.setCheckable(True)
@@ -281,6 +289,22 @@ class WorkspaceUI:
         self.center_stack.addWidget(self.home_scroll)
         self.web = self.create_reader()
         self.center_stack.addWidget(self.web)
+        self.function_map = FunctionMapWidget()
+        self.function_map.opened.connect(self.open_map_node)
+        self.function_map.toggled.connect(self.map_toggle_node)
+        self.function_map.paged.connect(self.map_page_node)
+        self.function_map.drilled.connect(self.map_drill_node)
+        self.function_map.upRequested.connect(self.map_up)
+        self.function_map.allRequested.connect(
+            lambda: self.refresh_function_map({"scope": {"kind": "all"}},
+                                              reveal=True, keep_view=False)
+        )
+        self.function_map.currentRequested.connect(self.map_current)
+        self.function_map.stateChanged.connect(self.save_map_location)
+        self.function_map.view.viewport().installEventFilter(self)
+        self.function_map.view.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.function_map.view.customContextMenuRequested.connect(self.map_context_menu)
+        self.center_stack.addWidget(self.function_map)
         center.addWidget(self.center_stack, 1)
         self.split.addWidget(middle)
         self.details_pane = QWidget()
@@ -425,6 +449,9 @@ class WorkspaceUI:
     def save_location_scroll(self):
         if self.page_loading:
             return
+        if self.map_active():
+            self.save_map_location()
+            return
         if self.center_stack.currentWidget() == self.web:
             position = self.reader_page.scrollPosition()
             self.history.save_scroll(position.x(), position.y())
@@ -441,6 +468,7 @@ class WorkspaceUI:
         self.requested_history_position = None
         self.invalidate_translation()
         self.center_stack.setCurrentWidget(self.home_scroll)
+        self.map_chrome(False)
         self.breadcrumb.clear()
         self.other_positions.hide()
         self.pending_navigation = None
@@ -538,7 +566,7 @@ class WorkspaceUI:
             control.blockSignals(True)
             control.setChecked(enabled)
             control.blockSignals(False)
-        self.details_pane.setVisible(enabled)
+        self.details_pane.setVisible(enabled and not self.map_active())
         if enabled:
             sizes = self.split.sizes()
             if sizes[2] < 235:

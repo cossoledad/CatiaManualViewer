@@ -57,6 +57,7 @@ class ResourceActions:
             return
         source = item.data(Qt.ItemDataRole.UserRole + 1) or {}
         menu = QMenu(self)
+        menu.addAction("在功能地图中定位").triggered.connect(lambda: self.result_on_map(item))
         self.add_original_action(
             menu, item.data(Qt.ItemDataRole.UserRole), source.get("fragment", "")
         )

@@ -108,6 +108,7 @@ class ManualCatalog:
         self.root = root.resolve()
         self.categories: list[Category] = []
         self.manuals: dict[str, Manual] = {}
+        self.source = None
         self.load()
 
     def make_manual(self, module: str, title: str) -> Manual | None:
@@ -164,6 +165,7 @@ class ManualCatalog:
                 self.categories.clear()
                 self.manuals.clear()
         if self.categories:
+            self.source = indexes[0].relative_to(self.root).as_posix()
             return
         # Older/cut-down copies may omit TOC.xml. Recover the same categories from the homepage.
         for homepage in sorted(online.glob("CATIA*_default.htm"))[:1]:
@@ -188,6 +190,7 @@ class ManualCatalog:
                         self.manuals[manual.id] = manual
                 if group.manuals:
                     self.categories.append(group)
+                    self.source = homepage.relative_to(self.root).as_posix()
         if not self.categories:
             group = Category("reference", "Reference", "参考文档")
             for folder in sorted(online.iterdir()):

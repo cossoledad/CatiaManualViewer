@@ -49,6 +49,7 @@ from catia_manual.core.resources import IMAGE_EXTENSIONS
 from catia_manual.core.search import SearchService
 from catia_manual.core.source import resolve_source
 from catia_manual.core.translation import TranslationService, make_provider
+from catia_manual.gui.map_workspace import MapWorkspace
 from catia_manual.gui.page_reader import PageReader
 from catia_manual.gui.reading_navigation import ReadingNavigation
 from catia_manual.gui.resource_actions import ResourceActions, ResourceBridge
@@ -117,7 +118,13 @@ class ReaderPage(QWebEnginePage):
 
 
 class MainWindow(
-    SearchFocus, ReadingNavigation, ResourceActions, PageReader, WorkspaceUI, QMainWindow
+    MapWorkspace,
+    SearchFocus,
+    ReadingNavigation,
+    ResourceActions,
+    PageReader,
+    WorkspaceUI,
+    QMainWindow,
 ):
     def __init__(self, settings: Settings, initial_target: str | None = None):
         super().__init__()
@@ -152,6 +159,7 @@ class MainWindow(
         self.selection_timer.setSingleShot(True)
         self.selection_timer.timeout.connect(self.translate_selection)
         self.init_page_reader()
+        self.init_function_map()
         self.build_interface()
         self.refresh_capabilities(probe=True)
         self.update_history_actions()
@@ -460,7 +468,8 @@ class MainWindow(
                 and self.current_document.content_hash == document.content_hash
             )
             self.current_document = document
-            self.details_pane.setVisible(self.settings.appearance.get("show_tools", True))
+            if not self.map_active():
+                self.details_pane.setVisible(self.settings.appearance.get("show_tools", True))
             self.requested_history_position = None
             self.expected_render = cached.resolve()
             if history_index is not None:
@@ -585,6 +594,7 @@ class MainWindow(
         # Give the native WebEngine surface its final visible geometry under the cover.
         # A hidden widget's first frame can otherwise appear at its pre-layout dimensions.
         self.center_stack.setCurrentWidget(self.web)
+        self.map_chrome(False)
 
         def reveal():
             if generation == self.navigation_generation and self.page_ready:
@@ -661,6 +671,10 @@ class MainWindow(
 
     def go_to_history(self, position):
         location = self.history.entries[position]
+        if location.path == "@map" and location.map_state:
+            self.show_function_map(request=location.map_state["request"], state=location.map_state,
+                                   history_index=position)
+            return
         if location.path == "@home" or location.path.startswith("@category:"):
             category = (
                 location.path.split(":", 1)[1] if location.path.startswith("@category:") else None
@@ -1000,6 +1014,8 @@ class MainWindow(
             self.show_error(str(exc))
 
     def apply_settings(self, settings):
+        self.save_map_location()
+        self.flush_map_state()
         if getattr(self, "search_cancel", None) is not None:
             self.search_cancel.set()
         library_changed = (
@@ -1036,15 +1052,19 @@ class MainWindow(
             self.history = NavigationHistory()
             self.reload_catalog()
             self.results.clear()
+            self.function_map.snapshot = None
             self.translation.clear()
             self.show_home()
         else:
-            self.details_pane.setVisible(settings.appearance.get("show_tools", True))
+            self.map_chrome(self.map_active())
             self.selection_changed()
-            self.attach_reading_page()
+            if not self.map_active():
+                self.attach_reading_page()
         self.statusBar().showMessage("设置已保存", 2000)
 
     def closeEvent(self, event):
+        self.save_map_location()
+        self.flush_map_state()
         if getattr(self, "search_cancel", None) is not None:
             self.search_cancel.set()
         if getattr(self, "semantic_cancel", None) is not None:

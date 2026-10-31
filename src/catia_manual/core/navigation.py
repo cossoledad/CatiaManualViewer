@@ -1,3 +1,4 @@
+import json
 from dataclasses import dataclass
 
 
@@ -12,6 +13,7 @@ class Location:
     source: dict | None = None
     placement: dict | None = None
     search_terms: list[str] | None = None
+    map_state: dict | None = None
 
 
 class NavigationHistory:
@@ -38,6 +40,11 @@ class NavigationHistory:
         current = self.current
 
         def context(entry):
+            if entry.path == "@map":
+                request = (entry.map_state or {}).get("request", {})
+                return json.dumps(
+                    {k: request.get(k) for k in ("scope", "focus", "branch")}, sort_keys=True
+                )
             return ((entry.placement or {}).get("manual"), (entry.placement or {}).get("id"))
 
         if current and (current.path, current.fragment, context(current)) == (
