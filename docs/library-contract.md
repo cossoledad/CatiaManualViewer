@@ -53,7 +53,7 @@ B 轮重定位规则：相同 content_hash 优先定位 block_id 并应用偏移
 
 搜索命中已包含 document_id、SourceLocation、heading_path、snippet、score 和 reason；QueryPlan 提供查询展开、方法、提示及拼写建议。结果保留兼容的 path/title/module 字段。分块与渲染共享来源标记，标题、段落和表格文本不会因标记移动图片或链接。
 
-reader_locations 持久化来源位置，term_aliases 保存用户别名；重建索引不删除它们或其他用户表。未来图谱边应包含关系类型、来源位置和生成依据，区分正文事实、显式引用、语义相关及模型建议。收藏、笔记与图谱尚未实现，须继续遵循此契约。
+reader_locations 持久化来源位置，term_aliases 保存用户别名；重建索引不删除它们或其他用户表。功能地图与页面关系图沿用相同来源契约，关系边包含类型、来源位置和生成依据；查看布局独立保存在 map_view_states / relation_view_states。产品聚焦手册查看，不规划笔记、自定义分支或关系编辑。
 
 B 轮数据库升级前保留 schema 1 一致性备份。导出及副本挂载使用 SQLite backup API，包含已提交 WAL；目标必须是新文件。挂载只修改新副本的 root，原数据库保留原绑定。完整清单相同保留库 UUID；明确接受的同库修订保留 UUID，但将 manifest_verified 设为 false，等待完整更新。
 

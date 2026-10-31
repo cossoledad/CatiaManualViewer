@@ -106,6 +106,12 @@ JSON CLI 和 `core` 不依赖 Qt。调用时使用参数列表，并以 UTF-8 �
 
 `verify_relations_gui.py` 以合成文档和模拟外部操作验证关系类型、循环、命令展开、出处、重复图片、示例权限、历史、筛选及重开恢复；`verify_relations_real.py` 使用隔离真实索引验证装配约束和 Creating Pads，报告分别在 `data/relations-gui.json` 与 `data/relations-real.json`。它们不接入 CI，不需要新模型；真实验证前先生成结构化搜索的隔离索引。
 
+两种图的排布与连线路由在 `gui/graph_geometry.py`（不依赖 Qt），原生边图元在 `gui/graph_edge.py`。发现树使用分支跨度排布，增量展开保留已有二维坐标；双向边分配不同端口，先尝试正交走线，受阻时以有数量上限的网格搜索绕开卡片。高密度或用户重叠的卡片不能保证没有交叉；选择/悬停聚焦、交叉底色和标签避让保持可读，不通过删边改变原文关系。
+
+画布隐藏滚动条，并围绕请求的视口动态扩展可导航区域。空白左拖与任意位置中拖平移，节点左拖调整显示位置；滚轮围绕指针缩放。拖动节点时以 16ms 定时器合并关联边的预览更新，释放时重新计算避障路由。位置、选择、视口继续使用既有 GraphViewState；不增加文档编辑、笔记或用户连线表。“整理布局”只重置显示坐标。布局边和语义边继续分离。
+
+本机运行 `python scripts/verify_graph_canvas.py` 验证远距离自由平移、指针缩放、真实鼠标节点拖动、中键平移、位置恢复、整理布局、双向边与标签避让，以及 200 节点的软件绘制。报告及截图为 `data/graph-canvas.json` / `data/graph-canvas.png`，仅供开发验收，不加入 CI。
+
 `verify_stage5_gui.py` 使用构造语料及可控 provider，检查渐进加载、优先级、暂停、失败重试、三种模式、锚点、历史位置和 SQLite 复用。`verify_real_page_translation.py` 使用真实 Creating Pads 和离线模型。`verify_stage_a_gui.py` 使用构造语料与模拟外部操作，检查模式持久化、能力降级、双击、图片预览和状态优先级。以上验证均在本机手动运行，不接入 CI。
 
 

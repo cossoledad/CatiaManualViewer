@@ -1,10 +1,10 @@
 """Typed controls layered on the shared native graph canvas."""
 
-from PySide6.QtCore import QTimer, Signal
+from PySide6.QtCore import Signal
 from PySide6.QtWidgets import QHBoxLayout, QToolButton
 
 from catia_manual.core.relations import RELATION_LABELS
-from catia_manual.gui.function_map import CARD_HEIGHT, CARD_WIDTH, FunctionMapWidget
+from catia_manual.gui.function_map import FunctionMapWidget
 from catia_manual.gui.style import icon
 
 
@@ -14,7 +14,6 @@ class RelationGraphWidget(FunctionMapWidget):
 
     def __init__(self):
         super().__init__()
-        self.free_layout = True
         self.up_button.hide()
         self.all_button.hide()
         self.current_button.setToolTip("回到中心页面")
@@ -81,54 +80,8 @@ class RelationGraphWidget(FunctionMapWidget):
     def set_snapshot(self, snapshot, state=None, terms=(), reading=None):
         for kind, button in self.type_buttons.items():
             button.setChecked(kind in snapshot.request["types"])
-        state = dict(state or {})
-        previous = (
-            self.positions
-            if self.snapshot
-            and self.snapshot.root == snapshot.root
-            and self.snapshot.graph_revision == snapshot.graph_revision
-            else {}
-        )
-        positions = {**previous, **state.get("positions", {})}
-        positions.setdefault(snapshot.root, [0, 0])
-        parents = {e["layout_target"]: e["layout_source"] for e in snapshot.edges if e["layout"]}
-        by_id = {n["id"]: n for n in snapshot.nodes}
-        # Keep the center article between page/image and command/sample neighborhoods.
-        for node in snapshot.nodes:
-            if node["id"] in positions:
-                continue
-            parent = parents.get(node["id"], snapshot.root)
-            base = positions.get(parent, [0, 0])
-            sign = (
-                (-1 if node["kind"] in {"command", "sample"} else 1)
-                if parent == snapshot.root
-                else (-1 if base[0] < 0 else 1)
-            )
-            x = base[0] + 330 * sign
-            y = base[1] + (
-                -110
-                if node["role"] == "reference" or node["kind"] == "command"
-                else 110
-                if node["kind"] == "image"
-                else 0
-            )
-            while any(
-                abs(x - p[0]) < CARD_WIDTH + 16 and abs(y - p[1]) < CARD_HEIGHT + 20
-                for key, p in positions.items()
-                if key in by_id
-            ):
-                y += 110
-            positions[node["id"]] = [x, y]
-        state["positions"] = {key: value for key, value in positions.items() if key in by_id}
         super().set_snapshot(snapshot, state, terms, reading)
         self.current_button.setEnabled(True)
-        if not state.get("viewport"):
-
-            def center():
-                if self.snapshot is snapshot:
-                    self.view.centerOn(self.items[snapshot.root])
-
-            QTimer.singleShot(0, center)
 
     def open_selected(self):
         if self.selected_id():

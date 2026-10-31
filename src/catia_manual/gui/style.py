@@ -30,6 +30,8 @@ def icon(name: str, color="#60758a") -> QIcon:
         "up": "M5 14l7-7 7 7M12 7v13",
         "locate": "M12 2v4M12 18v4M2 12h4M18 12h4M19 12a7 7 0 1 1-14 0 7 7 0 0 1 14 0",
         "fit": "M3 9V3h6M15 3h6v6M21 15v6h-6M9 21H3v-6",
+        "arrange": "M3 4h6v6H3zM15 3h6v6h-6zM15 15h6v6h-6zM9 7h3v11h3M12 6h3",
+        "image": "M3 3h18v18H3zM3 17l6-6 5 5 3-3 4 4M16 7h.01",
         "search": "M20 20l-5-5M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0",
         "settings": "M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6",
         "refresh": "M20 7v5h-5M4 17v-5h5M5 8a8 8 0 0 1 14-2l1 6M4 12l1 6a8 8 0 0 0 14-2",
