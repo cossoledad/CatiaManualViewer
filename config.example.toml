@@ -1,45 +1,32 @@
+# Portable defaults only. Personal paths and credentials must never enter the release.
 [documentation]
-root = 'C:\UserApp\3D\DS\Dassault Systemes\B33doc\English'
+root = 'manuals/English'
 homepage = 'CATIA_P3_homepage.htm'
 database = 'data/manuals.sqlite3'
 
 [catia]
-launcher = 'C:\UserApp\3D\DS\Dassault Systemes\B33\win_b64\code\bin\CATSTART.exe'
-environment = 'CATIA_P3.V5-6R2023.B33'
-environment_dir = 'C:\UserApp\3D\DS\Dassault Systemes\CATEnv'
+launcher = 'catia/CATSTART.exe'
+environment = ''
+environment_dir = 'catia/CATEnv'
 
 [translation]
-provider = 'local'
+provider = 'glossary'
 target_language = 'zh-CN'
 model_dir = 'data/models'
 automatic = true
 selection_delay_ms = 350
 max_selection_chars = 3000
 
-[translation.profiles.mymemory]
-endpoint = 'https://api.mymemory.translated.net/get'
-api_key_env = 'MYMEMORY_API_KEY'
-
-[translation.profiles.deepl]
-endpoint = 'https://api-free.deepl.com/v2/translate'
-api_key_env = 'DEEPL_API_KEY'
-
-[translation.profiles.libretranslate]
-endpoint = 'http://127.0.0.1:5000/translate'
-api_key_env = 'LIBRETRANSLATE_API_KEY'
-
-[translation.profiles.chat-completions]
-endpoint = ''
-model = ''
-api_key_env = 'CATIA_TRANSLATION_API_KEY'
-
 [appearance]
 font_size = 10
 reader_zoom = 100
+reading_mode = 'original'
+sidebar_sizes = [275, 925, 280]
 show_tools = true
 remember_window = true
 window_width = 1480
 window_height = 940
+
 [search]
 mode = 'keyword'
 model_dir = 'data/search-models/e5-small'

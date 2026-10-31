@@ -306,6 +306,14 @@ class MainWindow(
         dialog.exec()
         dialog.deleteLater()
 
+    def manage_transfer(self):
+        from catia_manual.gui.transfer import TransferDialog
+
+        self.save_location_scroll()
+        dialog = TransferDialog(self)
+        dialog.exec()
+        dialog.deleteLater()
+
     def manage_terms(self):
         from catia_manual.gui.library import TermsDialog
 

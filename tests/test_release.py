@@ -48,6 +48,15 @@ def test_version_tag_and_notes_must_match(tmp_path):
         release.metadata(tmp_path)
 
 
+def test_runtime_version_must_match_project_before_building(tmp_path):
+    (tmp_path / "pyproject.toml").write_text('[project]\nversion="0.6.0"', "utf-8")
+    runtime = tmp_path / "src/catia_manual/__init__.py"
+    runtime.parent.mkdir(parents=True)
+    runtime.write_text('__version__="0.5.0"', "utf-8")
+    with pytest.raises(ValueError, match="__version__"):
+        release.metadata(tmp_path, "v0.6.0")
+
+
 def test_archive_and_checksum_accept_only_clean_matching_bundle(tmp_path):
     archive = make_archive(tmp_path)
     release.verify_archive(archive, release.metadata()["version"])

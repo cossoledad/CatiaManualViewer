@@ -34,6 +34,7 @@ def icon(name: str, color="#60758a") -> QIcon:
         "image": "M3 3h18v18H3zM3 17l6-6 5 5 3-3 4 4M16 7h.01",
         "search": "M20 20l-5-5M17 10a7 7 0 1 1-14 0 7 7 0 0 1 14 0",
         "settings": "M4 6h16M4 12h16M4 18h16M8 3v6M16 9v6M10 15v6",
+        "transfer": "M3 7h15M14 3l4 4-4 4M21 17H6M10 13l-4 4 4 4",
         "refresh": "M20 7v5h-5M4 17v-5h5M5 8a8 8 0 0 1 14-2l1 6M4 12l1 6a8 8 0 0 0 14-2",
         "book": "M3 4q5-2 9 1 4-3 9-1v15q-5-2-9 1-4-3-9-1zM12 5v15",
         "grid": "M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z",

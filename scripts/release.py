@@ -1,6 +1,7 @@
 """CI release metadata, artifact verification and draft-first GitHub publication."""
 
 import argparse
+import ast
 import hashlib
 import json
 import ntpath
@@ -21,6 +22,16 @@ def metadata(project: Path = PROJECT, tag: str | None = None) -> dict:
     expected = "v" + version
     if tag is not None and tag != expected:
         raise ValueError(f"标签 {tag!r} 与 pyproject.toml 版本不一致，预期 {expected}")
+    runtime = project / "src/catia_manual/__init__.py"
+    if runtime.is_file():
+        values = [
+            ast.literal_eval(node.value)
+            for node in ast.parse(runtime.read_text("utf-8")).body
+            if isinstance(node, ast.Assign)
+            and any(isinstance(t, ast.Name) and t.id == "__version__" for t in node.targets)
+        ]
+        if values != [version]:
+            raise ValueError("程序 __version__ 与 pyproject.toml 版本不一致")
     notes = project / "docs/releases" / (expected + ".md")
     if not notes.is_file():
         raise ValueError(f"缺少发布说明：{notes}")

@@ -131,6 +131,8 @@ class WorkspaceUI:
         menu.addAction(self.build_button)
         self.library_action = menu.addAction(icon("layers"), "文档库管理…")
         self.library_action.triggered.connect(self.manage_library)
+        self.transfer_action = menu.addAction(icon("transfer"), "数据迁移…")
+        self.transfer_action.triggered.connect(self.manage_transfer)
         self.terms_action = menu.addAction(icon("book"), "术语与别名…")
         self.terms_action.triggered.connect(self.manage_terms)
         self.semantic_action = menu.addAction(icon("search"), "智能搜索…")
