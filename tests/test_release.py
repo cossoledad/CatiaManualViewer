@@ -17,6 +17,7 @@ def make_archive(folder, **extra):
         .replace("provider = 'glossary'", "provider = 'local'"),
         "build-info.json": json.dumps({"version": info["version"], "offline_models": True}),
         "dependencies.json": "[]",
+        "certifi/cacert.pem": "fixture-ca-bundle",
         "catia_manual/assets/reader_translation.js": "// fixture",
         "catia_manual/assets/reader_resources.js": "// fixture",
         "catia_manual/assets/reader_focus.js": "// fixture",
@@ -55,6 +56,21 @@ def test_runtime_version_must_match_project_before_building(tmp_path):
     runtime.write_text('__version__="0.5.0"', "utf-8")
     with pytest.raises(ValueError, match="__version__"):
         release.metadata(tmp_path, "v0.6.0")
+
+
+def test_archive_requires_the_https_certificate_bundle(tmp_path):
+    archive = make_archive(tmp_path)
+    with zipfile.ZipFile(archive) as package:
+        files = {
+            p.filename: package.read(p)
+            for p in package.infolist()
+            if not p.filename.endswith("/certifi/cacert.pem")
+        }
+    with zipfile.ZipFile(archive, "w") as package:
+        for name, content in files.items():
+            package.writestr(name, content)
+    with pytest.raises(ValueError, match="certifi/cacert.pem"):
+        release.verify_archive(archive, release.metadata()["version"])
 
 
 def test_archive_and_checksum_accept_only_clean_matching_bundle(tmp_path):

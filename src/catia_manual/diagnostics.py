@@ -14,6 +14,16 @@ def verify_runtime(settings: Settings, output: Path) -> int:
 
     checks = {}
     try:
+        import certifi
+        import httpx
+
+        checks["certificate_bundle"] = Path(certifi.where()).is_file()
+        # Constructing the client checks TLS resources, without making a request.
+        with httpx.Client():
+            checks["https_client"] = True
+    except Exception as exc:
+        checks["https_client"] = f"{type(exc).__name__}: {exc}"
+    try:
         from catia_manual.core.terminology import vocabulary
 
         checks["command_vocabulary"] = bool(vocabulary()["commands"])

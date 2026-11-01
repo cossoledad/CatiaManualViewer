@@ -14,3 +14,9 @@
         prefixes:
           - 'onnxruntime'
       when: 'win32'
+- module-name: 'certifi.core'
+  anti-bloat:
+    - description: 'resolve the bundled CA file without temporary resource extraction'
+      change_function:
+        'where': "'(lambda: __import__(\"os\").path.join(__import__(\"os\").path.dirname(__file__), \"cacert.pem\"))'"
+      when: 'standalone'

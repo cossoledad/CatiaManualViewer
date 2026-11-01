@@ -94,6 +94,7 @@ def verify_archive(archive: Path, version: str):
             "config.default.toml",
             "build-info.json",
             "dependencies.json",
+            "certifi/cacert.pem",
             "catia_manual/assets/reader_translation.js",
             "catia_manual/assets/reader_resources.js",
             "catia_manual/assets/reader_focus.js",
