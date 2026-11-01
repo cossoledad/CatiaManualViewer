@@ -14,3 +14,8 @@ def application_directory() -> Path:
         # Our release format is standalone, so the executable is beside its configuration.
         return Path(sys.executable).resolve().parent
     return Path(__file__).resolve().parents[2]
+
+
+def process_executable() -> str:
+    compiled = globals().get("__compiled__")
+    return str(getattr(compiled, "process_exe", None) or sys.executable)

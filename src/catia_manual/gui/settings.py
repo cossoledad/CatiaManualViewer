@@ -132,13 +132,14 @@ class TranslationSettings(QDialog):
 
     def update_fields(self):
         remote = self.provider.currentData() not in {"local", "glossary"}
+        credential = remote and self.provider.currentData() != "google-gtx"
         self.form.setRowVisible(self.endpoint, remote)
-        self.form.setRowVisible(self.key_env, remote)
-        self.form.setRowVisible(self.key, remote)
+        self.form.setRowVisible(self.key_env, credential)
+        self.form.setRowVisible(self.key, credential)
         self.form.setRowVisible(self.model, self.provider.currentData() == "chat-completions")
         self.endpoint.setEnabled(remote)
-        self.key_env.setEnabled(remote)
-        self.key.setEnabled(remote)
+        self.key_env.setEnabled(credential)
+        self.key.setEnabled(credential)
         self.model.setEnabled(self.provider.currentData() == "chat-completions")
 
     def values(self) -> dict:

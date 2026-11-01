@@ -15,6 +15,12 @@ PROVIDERS = {
         "model": "",
         "api_key_env": "MYMEMORY_API_KEY",
     },
+    "google-gtx": {
+        "label": "Google 翻译（实验）",
+        "endpoint": "https://translate.googleapis.com/translate_a/single",
+        "model": "",
+        "api_key_env": "",
+    },
     "deepl": {
         "label": "DeepL API Free",
         "endpoint": "https://api-free.deepl.com/v2/translate",

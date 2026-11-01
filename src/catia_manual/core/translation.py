@@ -253,6 +253,10 @@ class TranslationService:
 def make_provider(config: dict) -> TranslationProvider:
     name = config.get("provider", "glossary")
     config = {**config, **provider_profile(config, name)}
+    if name == "google-gtx":
+        from catia_manual.core.google_translation import GoogleTranslateProvider
+
+        return GoogleTranslateProvider(config["endpoint"])
     if name in {"mymemory", "deepl", "libretranslate", "chat-completions"}:
         from urllib.parse import urlsplit
 

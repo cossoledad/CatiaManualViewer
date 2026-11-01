@@ -5,7 +5,6 @@ import json
 import os
 import secrets
 import sqlite3
-import sys
 import tempfile
 import time
 from pathlib import Path
@@ -29,12 +28,13 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
-from catia_manual.agent.audit import log_directory
+from catia_manual.agent.audit import CallLog, log_directory
+from catia_manual.agent.lifecycle import FAILURES
 from catia_manual.agent.options import codex_config, options, valid_token
 from catia_manual.config import save_settings
 from catia_manual.core.credentials import protect_key, unprotect_key
 from catia_manual.core.readonly_index import ReadOnlyIndex
-from catia_manual.runtime import is_compiled
+from catia_manual.runtime import is_compiled, process_executable
 
 
 def local_addresses():
@@ -69,6 +69,7 @@ class AgentController(QObject):
         self.started_at = 0
         self.output = ""
         self.closing = False
+        self.failure = None
 
     @property
     def active(self):
@@ -124,13 +125,16 @@ class AgentController(QObject):
             env.insert("PYTHONUTF8", "1")
             self.process.setProcessEnvironment(env)
             arguments = ["--config", str(config), "--runtime", str(self.runtime)]
-            self.process.setProgram(sys.executable)
+            self.process.setProgram(process_executable())
+            self.process.setWorkingDirectory(str(Path(process_executable()).resolve().parent))
+            self.process.setStandardInputFile(QProcess.nullDevice())
             self.process.setArguments(
                 ["--agent-service", *arguments]
                 if is_compiled()
                 else ["-m", "catia_manual.agent.server", *arguments]
             )
             self.output = ""
+            self.failure = None
             self.state, self.message = "starting", "正在启动…"
             self.started_at = time.monotonic()
             self.process.start()
@@ -147,10 +151,28 @@ class AgentController(QObject):
             + bytes(self.process.readAllStandardOutput()).decode("utf-8", errors="replace")
         )[-8000:]
 
-    def process_error(self, _):
+    def process_error(self, error):
         if self.process.state() == QProcess.ProcessState.NotRunning:
-            self.message = "服务未能启动，请检查 Agent 依赖和监听设置"
-            self.finished(-1, None)
+            self.failure = {
+                "code": "PROCESS_START_FAILED"
+                if error == QProcess.ProcessError.FailedToStart
+                else "PROCESS_CRASHED",
+                "process_error": error.value,
+            }
+            if error == QProcess.ProcessError.FailedToStart:
+                self.finished(-1, None)
+
+    def runtime_failure(self):
+        if self.runtime and self.runtime.is_file():
+            try:
+                data = json.loads(self.runtime.read_text("utf-8"))
+                if data.get("instance") == self.identity and data.get("state") == "failed":
+                    return {
+                        key: data[key] for key in ("code", "exception", "os_error") if key in data
+                    }
+            except (OSError, ValueError):
+                pass
+        return None
 
     def tick(self):
         if not self.active:
@@ -170,8 +192,9 @@ class AgentController(QObject):
                         self.changed.emit()
             except (OSError, ValueError):
                 pass
-            if self.state == "starting" and time.monotonic() - self.started_at > 15:
-                self.stop("服务启动超时，请检查端口占用与依赖")
+            if self.state == "starting" and time.monotonic() - self.started_at > 60:
+                self.failure = {"code": "STARTUP_TIMEOUT"}
+                self.stop(FAILURES["STARTUP_TIMEOUT"])
         elif time.monotonic() - self.started_at > 5:
             self.process.kill()
 
@@ -189,13 +212,24 @@ class AgentController(QObject):
 
     def finished(self, exit_code, _):
         was_stopping = self.state == "stopping"
+        was_starting = self.state == "starting"
+        self.read_output()
+        self.failure = self.runtime_failure() or self.failure
         self.state = "stopped"
         self.timer.stop()
         if self.runtime:
             self.runtime.unlink(missing_ok=True)
             self.runtime.with_suffix(".lease").unlink(missing_ok=True)
-        if not was_stopping and exit_code:
-            self.message = "服务启动失败：请检查端口占用、索引或 Agent 依赖"
+        if not was_stopping and (exit_code or was_starting):
+            self.failure = self.failure or {"code": "STARTUP_ERROR"}
+        if self.failure:
+            self.message = FAILURES.get(self.failure.get("code"), FAILURES["STARTUP_ERROR"])
+            if getattr(self, "identity", None):
+                CallLog(self.window.settings, self.identity).write(
+                    "service_start_failed",
+                    exit_code=exit_code,
+                    **self.failure,
+                )
         elif not was_stopping:
             self.message = "服务已停止"
         self.changed.emit()

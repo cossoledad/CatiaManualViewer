@@ -56,7 +56,7 @@ def detect_capabilities(settings, *, catia_session=False):
             for file in ("model/model.bin", "sentencepiece.model", "metadata.json")
         ) and all(module_available(module) for module in ("ctranslate2", "sentencepiece"))
         reason = "离线模型未就绪"
-    elif name != "glossary":
+    elif name not in {"glossary", "google-gtx"}:
         try:
             key = resolve_api_key(config)
             ready = name not in {"deepl", "chat-completions"} or bool(key)

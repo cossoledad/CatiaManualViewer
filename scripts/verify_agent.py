@@ -25,6 +25,9 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument("--real", action="store_true", help="also read the configured installed manual")
 parser.add_argument("--exe", type=Path, help="test the compiled portable EXE instead of Python")
 parser.add_argument(
+    "--gui-launcher", action="store_true", help="also verify the GUI process launcher"
+)
+parser.add_argument(
     "--require-token", action="store_true", help="verify optional bearer authentication"
 )
 parser.add_argument(
@@ -326,6 +329,42 @@ print(json.dumps({'url':base, 'path':page['structuredContent']['path']}))
             )
         stop(process)
     # Read actual installed documentation without listeners, models, API calls or writes.
+    if args.gui_launcher:
+
+        def controller_probe(name):
+            target = folder / (name + ".json")
+            result = subprocess.run(
+                [
+                    *(
+                        [str(args.exe.resolve())]
+                        if args.exe
+                        else [sys.executable, "-m", "catia_manual.entry"]
+                    ),
+                    "--diagnostics-agent",
+                    "--config",
+                    str(config),
+                    "--report",
+                    str(target),
+                ],
+                timeout=80,
+            )
+            value = json.loads(target.read_text("utf-8"))
+            report[name] = value
+            return result, value
+
+        result, value = controller_probe("gui-launcher")
+        check(
+            result.returncode == 0 and value["state"] == "running" and value["stopped"],
+            "actual GUI controller starts and stops its own backend process",
+        )
+        with socket.socket() as occupied:
+            occupied.bind(("0.0.0.0", port))
+            occupied.listen()
+            result, value = controller_probe("gui-port-conflict")
+        check(
+            result.returncode != 0 and (value.get("failure") or {}).get("code") == "PORT_IN_USE",
+            "GUI controller preserves the real bind error and records startup diagnostics",
+        )
     if args.real:
         service = AgentKnowledge(load_settings())
         report["real"] = []

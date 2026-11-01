@@ -6,6 +6,7 @@ import ipaddress
 import json
 import logging
 import os
+import socket
 import threading
 import time
 from collections import defaultdict, deque
@@ -21,6 +22,7 @@ from starlette.responses import JSONResponse, Response
 
 from catia_manual import __version__
 from catia_manual.agent.audit import CallLog
+from catia_manual.agent.lifecycle import failed_runtime, write_runtime
 from catia_manual.agent.options import options, valid_token
 from catia_manual.config import load_settings
 from catia_manual.core.agent import AgentError, AgentKnowledge
@@ -284,9 +286,7 @@ def main(argv=None):
                     "state": "ready",
                 }
                 args.runtime.parent.mkdir(parents=True, exist_ok=True)
-                temporary = args.runtime.with_suffix(".tmp")
-                temporary.write_text(json.dumps(value), "utf-8")
-                temporary.replace(args.runtime)
+                write_runtime(args.runtime, value)
 
     config = uvicorn.Config(
         app,
@@ -320,11 +320,26 @@ def main(argv=None):
         server.should_exit = True
 
     threading.Thread(target=parent_lifetime, daemon=True).start()
+    ready = False
     try:
-        server.run()
+        # Bind explicitly to retain the OS error code; uvicorn otherwise turns
+        # socket failures into a generic SystemExit before the GUI can explain it.
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as listener:
+            if os.name == "nt":
+                listener.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
+            else:
+                listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            listener.bind((profile["host"], profile["port"]))
+            listener.set_inheritable(True)
+            server.run(sockets=[listener])
+            ready = server.started
+    except Exception as exc:
+        failed_runtime(["--runtime", str(args.runtime)], instance, exc)
+        raise
     finally:
         app.audit.write("service_stop", library_id=knowledge.library_id)
-        args.runtime.unlink(missing_ok=True)
+        if ready:
+            args.runtime.unlink(missing_ok=True)
     return 0
 
 

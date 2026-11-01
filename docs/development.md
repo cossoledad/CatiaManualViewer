@@ -37,7 +37,7 @@ ruff check src scripts tests packaging
 
 Agent 验收使用 `scripts/verify_agent.py`（官方 MCP 客户端、真实 TCP、认证与只读校验）及 `scripts/verify_agent_gui.py`（界面启停、加密保存、库授权与进程退出）。前者可加 `--real` 只读检查本机配置的真实手册。Windows 上网络及 asyncio 验证需在允许本机 socket 的原生环境运行；不需要外部网络或云服务。使用方式见 [Agent 接入](agent.md)。这些验证不加入 CI。
 
-便携包构建后，使用 `python scripts/verify_agent.py --exe '便携目录/CatiaManualViewer.exe'` 验证编译版服务入口；客户端从独立目录连接真实 TCP，不依赖编译进程的 Python 环境。
+便携包构建后，使用 `python scripts/verify_agent.py --exe '便携目录/CatiaManualViewer.exe' --gui-launcher` 验证编译版服务入口、真实 Qt 控制器的自启动／停止和端口冲突诊断；客户端从独立目录连接真实 TCP，不依赖编译进程的 Python 环境。隐藏的 `--diagnostics-agent --config <合成库配置> --report <报告>` 仅供开发验收，会保存传入配置的 Agent 库授权。
 
 MCP 验收默认使用免令牌模式；加 `--require-token` 验证可选认证及令牌轮换。
 Windows 开发机可加 `--wsl`，使用默认 WSL 发行版的 Python 标准库验证跨系统的初始化、搜索与原文读取，无需在 WSL 安装额外依赖。

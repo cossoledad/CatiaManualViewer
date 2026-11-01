@@ -78,3 +78,56 @@ def verify_runtime(settings: Settings, output: Path) -> int:
     }
     output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
     return 0 if all(value is True for value in checks.values()) else 1
+
+
+def verify_agent_controller(argv):
+    """Developer-only check of the compiled GUI's real child-process launcher."""
+    import argparse
+    import time
+
+    from PySide6.QtCore import QObject
+    from PySide6.QtTest import QTest
+    from PySide6.QtWidgets import QApplication
+
+    from catia_manual.config import load_settings
+    from catia_manual.gui.agent import AgentController
+    from catia_manual.runtime import process_executable
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("--report", type=Path, required=True)
+    args = parser.parse_args(argv)
+    app = QApplication.instance() or QApplication([])
+
+    class Owner(QObject):
+        def __init__(self):
+            super().__init__()
+            self.settings = load_settings(args.config)
+
+        def flush_preferences(self):
+            pass
+
+    owner = Owner()
+    controller = AgentController(owner)
+    controller.start()
+    deadline = time.monotonic() + 65
+    while controller.state in {"starting", "stopping"} and time.monotonic() < deadline:
+        app.processEvents()
+        QTest.qWait(30)
+    report = {
+        "compiled": is_compiled(),
+        "executable": process_executable(),
+        "state": controller.state,
+        "message": controller.message,
+        "failure": controller.failure,
+        "process_error": controller.process.errorString(),
+    }
+    controller.stop()
+    deadline = time.monotonic() + 8
+    while controller.active and time.monotonic() < deadline:
+        app.processEvents()
+        QTest.qWait(30)
+    report["stopped"] = not controller.active
+    args.report.parent.mkdir(parents=True, exist_ok=True)
+    args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2), "utf-8")
+    return 0 if report["state"] == "running" and report["stopped"] else 1
