@@ -10,6 +10,7 @@ DEFAULTS = {
     "allow_subnets": ["127.0.0.0/8", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16"],
     "auto_start": False,
     "require_token": False,
+    "log_calls": True,
     "token_encrypted": "",
     "library_id": "",
 }
@@ -44,6 +45,8 @@ def options(value):
         raise ValueError("自动启动配置无效")
     if type(result["require_token"]) is not bool:
         raise ValueError("访问令牌配置无效")
+    if type(result["log_calls"]) is not bool:
+        raise ValueError("调用日志配置无效")
     if result["library_id"]:
         uuid.UUID(result["library_id"])
     return {key: result[key] for key in DEFAULTS}

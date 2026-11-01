@@ -20,6 +20,7 @@ from mcp.types import CallToolResult, TextContent, ToolAnnotations
 from starlette.responses import JSONResponse, Response
 
 from catia_manual import __version__
+from catia_manual.agent.audit import CallLog
 from catia_manual.agent.options import options, valid_token
 from catia_manual.config import load_settings
 from catia_manual.core.agent import AgentError, AgentKnowledge
@@ -38,11 +39,12 @@ INSTRUCTIONS = (
 class NetworkGuard:
     """Validate peer, Host, Origin, token and bounded bodies before entering the SDK."""
 
-    def __init__(self, app, token, profile):
+    def __init__(self, app, token, profile, audit):
         self.app, self.profile = app, profile
         self.token = valid_token(token) if profile["require_token"] else None
         self.networks = [ipaddress.ip_network(n) for n in profile["allow_subnets"]]
         self.calls = defaultdict(deque)
+        self.audit = audit
 
     def allowed_host(self, hostname):
         if hostname == "localhost":
@@ -56,6 +58,11 @@ class NetworkGuard:
     async def __call__(self, scope, receive, send):
         if scope["type"] != "http":
             return await self.app(scope, receive, send)
+        if self.audit.enabled:
+            return await self.audit.request(scope, receive, send, self.dispatch)
+        return await self.dispatch(scope, receive, send)
+
+    async def dispatch(self, scope, receive, send):
 
         async def reject(status):
             response = Response(status_code=status, headers={"Cache-Control": "no-store"})
@@ -136,6 +143,7 @@ class NetworkGuard:
 def create_app(settings, token=None):
     profile = options(settings.agent)
     knowledge = AgentKnowledge(settings)
+    audit = CallLog(settings, knowledge.instance_id)
     if profile["library_id"] and profile["library_id"] != knowledge.library_id:
         raise AgentError("LIBRARY_CHANGED", "文档库已变化，请重新授权并启动 Agent 服务")
     # NetworkGuard performs strict dynamic IPv4 Host and same-origin validation.
@@ -234,11 +242,12 @@ def create_app(settings, token=None):
                 "library_id": knowledge.library_id,
                 "instance_id": knowledge.instance_id,
                 "readonly": True,
+                "logging": {"enabled": audit.enabled, "available": audit.available},
             },
             headers={"Cache-Control": "no-store"},
         )
 
-    guard = NetworkGuard(mcp.streamable_http_app(), token, profile)
+    guard = NetworkGuard(mcp.streamable_http_app(), token, profile, audit)
     guard.mcp = mcp
     return guard, knowledge
 
@@ -261,6 +270,12 @@ def main(argv=None):
         async def startup(self, sockets=None):
             await super().startup(sockets)
             if self.started:
+                app.audit.write(
+                    "service_start",
+                    library_id=knowledge.library_id,
+                    authentication="bearer" if profile["require_token"] else "none",
+                    port=profile["port"],
+                )
                 value = {
                     "pid": os.getpid(),
                     "instance": instance,
@@ -308,6 +323,7 @@ def main(argv=None):
     try:
         server.run()
     finally:
+        app.audit.write("service_stop", library_id=knowledge.library_id)
         args.runtime.unlink(missing_ok=True)
     return 0
 

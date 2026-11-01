@@ -79,6 +79,7 @@ def test_archive_and_checksum_accept_only_clean_matching_bundle(tmp_path):
         "online/manual.htm",
         "../escape.txt",
         "integration/obsolete.catvbs",
+        "data/logs/mcp/session.jsonl",
     ],
 )
 def test_archive_rejects_private_data_and_unsafe_paths(tmp_path, name):

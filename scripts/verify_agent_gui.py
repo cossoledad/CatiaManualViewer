@@ -14,7 +14,7 @@ os.environ.setdefault("QTWEBENGINE_CHROMIUM_FLAGS", "--disable-gpu")
 
 import httpx  # noqa: E402
 import tomlkit  # noqa: E402
-from PySide6.QtGui import QFont  # noqa: E402
+from PySide6.QtGui import QDesktopServices, QFont  # noqa: E402
 from PySide6.QtTest import QTest  # noqa: E402
 from PySide6.QtWidgets import QApplication, QLineEdit  # noqa: E402
 
@@ -56,6 +56,8 @@ app.setFont(QFont("Microsoft YaHei UI", 10))
 window = MainWindow(settings, "online/shared_v17/coincide.htm")
 window.show()
 report = {"checks": [], "failures": []}
+opened_logs = []
+QDesktopServices.openUrl = lambda url: opened_logs.append(url.toLocalFile()) or True
 dialog = None
 
 
@@ -107,6 +109,15 @@ try:
     output = project / "data"
     output.mkdir(exist_ok=True)
     dialog.grab().save(str(output / "agent-settings-no-token.png"))
+    dialog.logs_button.click()
+    check(
+        opened_logs
+        and Path(opened_logs[-1]) == database.parent / "logs/mcp"
+        and dialog.log_calls.isChecked()
+        and not dialog.log_calls.isEnabled()
+        and load_settings(config).agent["log_calls"],
+        "call logs are enabled, persisted and accessible from the service dialog",
+    )
     dialog.stop_button.click()
     wait(lambda: not controller.active)
     dialog.require_token.setChecked(True)
@@ -186,6 +197,7 @@ try:
     dialog = AgentDialog(window)
     dialog.show()
     dialog.require_token.setChecked(False)
+    dialog.log_calls.setChecked(False)
     dialog.start_button.click()
     wait(lambda: controller.state == "running")
     with httpx.Client(trust_env=False, timeout=3) as client:
@@ -195,6 +207,11 @@ try:
             and not load_settings(config).agent["require_token"],
             "disabling authentication removes the environment dependency "
             "and persists across restart",
+        )
+        check(
+            not client.get(base + "/health").json()["logging"]["enabled"]
+            and not load_settings(config).agent["log_calls"],
+            "disabling call logs persists and disables logging in the backend",
         )
     dialog.close()
     window.close()

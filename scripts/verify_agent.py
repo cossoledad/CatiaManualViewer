@@ -299,6 +299,16 @@ print(json.dumps({'url':base, 'path':page['structuredContent']['path']}))
         process.returncode == 0 and not runtime.exists(),
         "removing the owner lease gracefully stops the backend and cleans readiness state",
     )
+    log_files = list((database.parent / "logs/mcp").glob("*.jsonl*"))
+    events = [json.loads(line) for p in log_files for line in p.read_text("utf-8").splitlines()]
+    check(
+        any(e["event"] == "service_start" for e in events)
+        and any(e["event"] == "service_stop" for e in events)
+        and any(e.get("tool") == "search" and e["outcome"] == "ok" for e in events)
+        and any(e.get("error_code") == "INVALID_REFERENCE" for e in events)
+        and all(token not in p.read_text("utf-8") for p in log_files),
+        "runtime logs record calls, errors and lifecycle without storing credentials",
+    )
     if args.require_token:
         old_token, token = token, secrets.token_urlsafe(32)
         process = start(token)

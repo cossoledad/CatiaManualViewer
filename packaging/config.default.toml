@@ -33,6 +33,7 @@ model_dir = 'data/search-models/e5-small'
 threads = 2
 
 [agent]
+log_calls = true
 require_token = false
 host = '127.0.0.1'
 port = 8765

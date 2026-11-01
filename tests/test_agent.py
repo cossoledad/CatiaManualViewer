@@ -184,6 +184,24 @@ def test_mcp_http_handshake_tools_and_guard(agent_library, require_token):
                 assert (await client.get("/health")).status_code == (401 if require_token else 200)
                 auth = {"Authorization": "Bearer " + token}
                 assert (await client.get("/health", headers=auth)).status_code == 200
+                mcp_headers = {**auth, "Accept": "application/json, text/event-stream"}
+                for name, arguments in (
+                    ("search", {"query": "NeverLogSensitiveSearch", "limit": 1}),
+                    ("fetch", {"id": "NeverLogReference"}),
+                    ("fetch", {}),
+                    ("NeverLogUnknownTool", {}),
+                ):
+                    response = await client.post(
+                        "/mcp",
+                        headers=mcp_headers,
+                        json={
+                            "jsonrpc": "2.0",
+                            "id": 1,
+                            "method": "tools/call",
+                            "params": {"name": name, "arguments": arguments},
+                        },
+                    )
+                    assert response.status_code == 200
                 assert (
                     await client.get("/health", headers={"Authorization": "Bearer stale-token"})
                 ).status_code == (401 if require_token else 200)
@@ -237,6 +255,22 @@ def test_mcp_http_handshake_tools_and_guard(agent_library, require_token):
             ).status_code == 403
 
     asyncio.run(asyncio.wait_for(run(), timeout=15))
+    entries = [json.loads(line) for line in app.audit.path.read_text("utf-8").splitlines()]
+    tools = [entry for entry in entries if entry["event"] == "tool_call"]
+    assert any(e["tool"] == "search" and e["result_count"] == 0 for e in tools)
+    assert any(e.get("error_code") == "INVALID_REFERENCE" for e in tools)
+    assert any(e.get("error_code") == "TOOL_ERROR" for e in tools)
+    assert any(e["http_status"] == 403 and e["outcome"] == "rejected" for e in entries)
+    assert all(e["duration_ms"] >= 0 and e["request_id"] for e in entries)
+    contents = app.audit.path.read_text("utf-8")
+    for private in (
+        token,
+        "NeverLogSensitiveSearch",
+        "NeverLogReference",
+        "NeverLogUnknownTool",
+        "attacker.invalid",
+    ):
+        assert private not in contents
 
 
 def test_importing_core_agent_loads_neither_qt_nor_inference():
@@ -279,6 +313,50 @@ def test_agent_configuration_persists_but_is_not_exported(agent_library):
         {"allow_subnets": ["0.0.0.0/0"]},
         {"auto_start": "true"},
         {"require_token": "false"},
+        {"log_calls": "true"},
     ):
         with pytest.raises(ValueError):
             options(invalid)
+
+
+def test_call_logs_rotate_and_retain_bounded_sessions(agent_library):
+    from catia_manual.agent.audit import CallLog
+
+    audit = CallLog(agent_library, "a" * 24, max_bytes=400)
+    for _ in range(20):
+        audit.write("tool_call", tool="fetch", outcome="ok")
+    files = list(audit.directory.glob("*.jsonl*"))
+    assert len(files) == 3 and audit.available
+    assert all(
+        json.loads(line)["tool"] == "fetch"
+        for p in files
+        for line in p.read_text("utf-8").splitlines()
+    )
+    for i in range(12):
+        audit = CallLog(agent_library, f"{i:024x}")
+        audit.write("service_start")
+    assert len(list(audit.directory.glob("*.jsonl"))) == 10
+
+
+def test_call_log_disabled_or_unwritable_never_breaks_queries(agent_library, monkeypatch):
+    from catia_manual.agent.audit import CallLog
+
+    disabled = CallLog(replace(agent_library, agent={"log_calls": False}), "a" * 24)
+    disabled.write("service_start")
+    assert not disabled.directory.exists()
+    audit = CallLog(agent_library, "b" * 24)
+
+    def full_disk():
+        raise OSError("simulated full disk")
+
+    with monkeypatch.context() as patch:
+        patch.setattr(audit.handler, "_open", full_disk)
+        audit.write("service_start")
+        assert not audit.available
+    audit.write("service_start")
+    assert audit.available and audit.path.is_file()
+    with monkeypatch.context() as patch:
+        patch.setattr(audit.handler, "close", full_disk)
+        audit.write("service_start")
+        assert not audit.available
+    audit.handler.close()

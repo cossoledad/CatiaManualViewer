@@ -10,7 +10,8 @@ import tempfile
 import time
 from pathlib import Path
 
-from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, Signal
+from PySide6.QtCore import QObject, QProcess, QProcessEnvironment, QTimer, QUrl, Signal
+from PySide6.QtGui import QDesktopServices
 from PySide6.QtNetwork import QAbstractSocket, QNetworkInterface
 from PySide6.QtWidgets import (
     QApplication,
@@ -28,6 +29,7 @@ from PySide6.QtWidgets import (
     QWidget,
 )
 
+from catia_manual.agent.audit import log_directory
 from catia_manual.agent.options import codex_config, options, valid_token
 from catia_manual.config import save_settings
 from catia_manual.core.credentials import protect_key, unprotect_key
@@ -227,6 +229,9 @@ class AgentDialog(QDialog):
         self.auto_start = QCheckBox("随软件启动")
         self.auto_start.setChecked(profile["auto_start"])
         form.addRow(self.auto_start)
+        self.log_calls = QCheckBox("记录调用日志")
+        self.log_calls.setChecked(profile["log_calls"])
+        form.addRow(self.log_calls)
         layout.addLayout(form)
         self.status = QLabel(self.controller.message)
         self.status.setWordWrap(True)
@@ -239,6 +244,9 @@ class AgentDialog(QDialog):
         self.stop_button.clicked.connect(lambda: self.controller.stop())
         row.addWidget(self.start_button)
         row.addWidget(self.stop_button)
+        self.logs_button = QPushButton("调用日志")
+        self.logs_button.clicked.connect(self.open_logs)
+        row.addWidget(self.logs_button)
         layout.addLayout(row)
         form = QFormLayout()
         self.address = QComboBox()
@@ -289,6 +297,7 @@ class AgentDialog(QDialog):
                 "allow_subnets": [v.strip() for v in self.subnets.text().split(",") if v.strip()],
                 "auto_start": self.auto_start.isChecked(),
                 "require_token": self.require_token.isChecked(),
+                "log_calls": self.log_calls.isChecked(),
             }
         )
 
@@ -316,7 +325,14 @@ class AgentDialog(QDialog):
         self.start_button.setEnabled(not active)
         self.stop_button.setEnabled(active)
         self.rotate_button.setEnabled(not active)
-        for field in (self.host, self.port, self.auto_start, self.subnets, self.require_token):
+        for field in (
+            self.host,
+            self.port,
+            self.auto_start,
+            self.subnets,
+            self.require_token,
+            self.log_calls,
+        ):
             field.setEnabled(not active)
         self.key.setText(self.controller.token() if self.require_token.isChecked() else "")
         self.preview()
@@ -327,6 +343,15 @@ class AgentDialog(QDialog):
             self.controller.start()
         except (ValueError, OSError) as exc:
             self.status.setText(str(exc))
+
+    def open_logs(self):
+        try:
+            directory = log_directory(self.window.settings)
+            directory.mkdir(parents=True, exist_ok=True)
+            if not QDesktopServices.openUrl(QUrl.fromLocalFile(str(directory))):
+                self.status.setText("无法打开日志目录")
+        except OSError:
+            self.status.setText("无法打开日志目录")
 
     def copy_token(self):
         try:

@@ -84,7 +84,7 @@ def verify_archive(archive: Path, version: str):
                     ".catdrawing",
                 }
                 or any(
-                    part.casefold() in {".git", ".venv", "catenv", "catsettings", "online"}
+                    part.casefold() in {".git", ".venv", "catenv", "catsettings", "online", "logs"}
                     for part in path.parts[1:]
                 )
             ):
