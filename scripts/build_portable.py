@@ -6,6 +6,7 @@ import importlib.util
 import json
 import os
 import shutil
+import ssl
 import subprocess
 import sys
 import tomllib
@@ -92,6 +93,11 @@ def main():
         "--mingw64" if args.compiler == "mingw64" else "--msvc=latest",
         str(PROJECT / "packaging/portable_entry.py"),
     ]
+    # The Codex-managed development Python adds a local CA distrust rule to ssl.py.
+    # Preserve its required data when using that interpreter; stock CI Python has none.
+    rejected_cas = Path(ssl.__file__).with_name("codex-rejected-cas.pem")
+    if rejected_cas.is_file():
+        command.insert(-1, f"--include-data-files={rejected_cas}={rejected_cas.name}")
     subprocess.run(command, cwd=PROJECT, env=env, check=True)
     # copytree refuses an existing destination; a build never overwrites a user's portable data.
     shutil.copytree(work / "portable_entry.dist", release)

@@ -13,16 +13,27 @@ def verify_runtime(settings: Settings, output: Path) -> int:
     from catia_manual.gui.style import ASSETS
 
     checks = {}
+    https_trace = []
     try:
+        import ssl
+
         import certifi
         import httpx
 
         checks["certificate_bundle"] = Path(certifi.where()).is_file()
+        ssl.create_default_context(cafile=certifi.where())
+        checks["ssl_context"] = True
         # Constructing the client checks TLS resources, without making a request.
         with httpx.Client():
             checks["https_client"] = True
     except Exception as exc:
+        import traceback
+
         checks["https_client"] = f"{type(exc).__name__}: {exc}"
+        https_trace = [
+            {"file": Path(frame.filename).name, "line": frame.lineno, "function": frame.name}
+            for frame in traceback.extract_tb(exc.__traceback__)
+        ]
     try:
         from catia_manual.core.terminology import vocabulary
 
@@ -84,6 +95,7 @@ def verify_runtime(settings: Settings, output: Path) -> int:
         "application_directory": str(application_directory()),
         "config": str(settings.config_path),
         "database": str(settings.database),
+        "https_trace": https_trace,
         "checks": checks,
     }
     output.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
