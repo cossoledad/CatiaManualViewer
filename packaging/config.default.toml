@@ -24,6 +24,7 @@ reading_mode = 'original'
 sidebar_sizes = [275, 925, 280]
 show_tools = true
 remember_window = true
+minimize_to_tray = true
 window_width = 1480
 window_height = 940
 

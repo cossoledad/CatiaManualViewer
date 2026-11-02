@@ -297,6 +297,9 @@ class GlobalSettings(QDialog):
         self.remember_window = QCheckBox("记住窗口大小")
         self.remember_window.setChecked(settings.appearance.get("remember_window", True))
         visual.addRow(self.remember_window)
+        self.minimize_to_tray = QCheckBox("最小化到系统托盘")
+        self.minimize_to_tray.setChecked(settings.appearance.get("minimize_to_tray", True))
+        visual.addRow(self.minimize_to_tray)
         self.tabs.addTab(appearance, "阅读与界面")
         self.note = QLabel("")
         self.note.setWordWrap(True)
@@ -360,6 +363,7 @@ class GlobalSettings(QDialog):
                 "reading_mode": self.reading_mode.currentData(),
                 "show_tools": self.tools.isChecked(),
                 "remember_window": self.remember_window.isChecked(),
+                "minimize_to_tray": self.minimize_to_tray.isChecked(),
             },
             "search": {
                 **self.original.search,

@@ -1,6 +1,6 @@
 # CI 与发布
 
-当前版本 **0.8.0**，标签 **v0.8.0**。使用者只下载 Windows x64 Nuitka 便携版。
+当前版本 **0.8.1**，标签 **v0.8.1**。使用者只下载 Windows x64 Nuitka 便携版。
 
 ## 构建流程
 
@@ -13,10 +13,10 @@
 ## 发布
 
 ```powershell
-python scripts/release.py metadata --tag v0.8.0
+python scripts/release.py metadata --tag v0.8.1
 # 提交并推送已验证的代码后，在相同提交创建标签：
-git tag v0.8.0
-git push origin v0.8.0
+git tag v0.8.1
+git push origin v0.8.1
 ```
 
 发布任务重新校验 ZIP 和校验文件，创建或恢复草稿，上传成功后转为公开。上传失败可重跑草稿；公开 Release 不自动覆盖。手动运行工作流只构建，不发布。
@@ -24,8 +24,8 @@ git push origin v0.8.0
 如果标签因版本不一致而失败，重跑旧提交仍会失败。先修正版本、提交并推送，再核实失败标签尚无公开 Release，使用带明确旧 SHA 的 force-with-lease 将标签移动至修正提交并推送，触发重新构建。不要对已公开版本使用此方式。
 
 ```powershell
-git tag -f v0.8.0 <修正提交>
-git push --force-with-lease=refs/tags/v0.8.0:<旧标签SHA> origin refs/tags/v0.8.0
+git tag -f v0.8.1 <修正提交>
+git push --force-with-lease=refs/tags/v0.8.1:<旧标签SHA> origin refs/tags/v0.8.1
 ```
 
 公开资产只来自 CI 的干净源码构建。个人迁移包不能上传到 Release。`verify` 检查路径、版本、模型 manifest、凭据、机器路径与禁止文件；SHA-256 在上传前再次校验。

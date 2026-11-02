@@ -164,9 +164,16 @@ class MainWindow(
         self.selection_timer.setSingleShot(True)
         self.selection_timer.timeout.connect(self.translate_selection)
         self.init_page_reader()
+        from catia_manual.gui.pdf_export import PdfExporter
+
+        self.pdf_exporter = PdfExporter(self)
         self.init_function_map()
         self.init_relations()
         self.build_interface()
+        from catia_manual.gui.tray import TrayController
+
+        self.tray_controller = TrayController(self)
+        self.web.loadStarted.connect(self.pdf_exporter.update_action)
         self.refresh_capabilities(probe=True)
         self.update_history_actions()
         QTimer.singleShot(400, self.upgrade_search_structure)
@@ -680,10 +687,7 @@ class MainWindow(
             self.show_error("无法映射到本机 CATIA 文档：" + target)
 
     def activate_request(self, request):
-        if self.isMinimized():
-            self.showNormal()
-        self.raise_()
-        self.activateWindow()
+        self.tray_controller.restore()
         if request.get("open"):
             self.open_target(request["open"])
 
@@ -727,6 +731,7 @@ class MainWindow(
         self.open_document(location.path, location.fragment, history_index=position)
 
     def update_history_actions(self):
+        self.pdf_exporter.update_action()
         self.back_action.setEnabled(self.history.can_back)
         self.forward_action.setEnabled(self.history.can_forward)
         self.history_button.setEnabled(self.history.can_back or self.history.can_forward)
@@ -1105,7 +1110,14 @@ class MainWindow(
                 self.attach_reading_page()
         self.statusBar().showMessage("设置已保存", 2000)
 
+    def changeEvent(self, event):
+        super().changeEvent(event)
+        tray = getattr(self, "tray_controller", None)
+        if tray and event.type() == QEvent.Type.WindowStateChange and self.isMinimized():
+            tray.on_minimized(event.oldState())
+
     def closeEvent(self, event):
+        self.tray_controller.quitting = True
         if self.agent_controller.active:
             if self.agent_controller.state != "stopping":
                 self.agent_controller.stop()
@@ -1123,7 +1135,7 @@ class MainWindow(
         self.flush_reading_locations()
         if self.page_task:
             self.page_task.paused = True
-        if self.jobs:
+        if self.jobs or self.pdf_exporter.busy:
             self.statusBar().showMessage("正在保存并等待后台任务完成…")
             QTimer.singleShot(100, self.close)
             event.ignore()
@@ -1140,7 +1152,9 @@ class MainWindow(
                         "appearance": {
                             "window_width": geometry.width(),
                             "window_height": geometry.height(),
-                            "window_maximized": self.isMaximized(),
+                            "window_maximized": self.tray_controller.restore_maximized
+                            if self.isMinimized()
+                            else self.isMaximized(),
                         }
                     },
                 )
@@ -1149,7 +1163,10 @@ class MainWindow(
         # Release the page before its profile to avoid WebEngine shutdown warnings.
         self.web.setPage(QWebEnginePage(self.web))
         self.reader_page.deleteLater()
+        self.tray_controller.tray.hide()
         event.accept()
+        # Closing an already-hidden window does not emit lastWindowClosed.
+        QApplication.instance().quit()
 
 
 def run(settings: Settings, initial_target: str | None = None) -> int:

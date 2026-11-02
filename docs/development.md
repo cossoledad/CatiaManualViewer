@@ -44,6 +44,8 @@ Windows 开发机可加 `--wsl`，使用默认 WSL 发行版的 Python 标准库
 
 ## 维护工具
 
+`python scripts/verify_pdf_tray_gui.py` 验证三种模式的 PDF 内容、图片与链接、阅读位置、保存失败保护、托盘恢复和隐藏窗口下的 MCP 生命周期；使用合成手册，不调用外部翻译服务。报告和 PDF 预览写入 `.cache/pdf-tray-gui`，不加入 CI。
+
 - `scripts/build_icons.py`：从随库 SVG 生成 PNG/ICO。
 - `scripts/build_terminology.py`：开发机提取随包双语词库，不是运行时依赖。
 - `scripts/setup_translation.py`：按 `packaging/models.lock.json` 安装并校验离线翻译模型。

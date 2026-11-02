@@ -20,6 +20,8 @@ def icon(name: str, color="#60758a") -> QIcon:
         "history": "M3 4v5h5M3 9a9 9 0 1 1 1 10M12 7v5l3 2",
         "more": "M5 11v2M12 11v2M19 11v2",
         "close": "M6 6l12 12M6 18L18 6",
+        "tray": "M12 3v11M7 9l5 5 5-5M4 15v6h16v-6",
+        "print": "M6 9V3h12v6M6 17H3V9h18v8h-3M6 14h12v7H6zM17 11h.01",
         "info": "M12 11v6M12 7v.2M22 12a10 10 0 1 1-20 0 10 10 0 0 1 20 0",
         "highlight": "M4 17l9-13 7 5-9 13zM3 22h7M7 13l7 5",
         "pause": "M8 5v14M16 5v14",

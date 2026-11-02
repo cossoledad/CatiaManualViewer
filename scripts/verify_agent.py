@@ -333,6 +333,11 @@ print(json.dumps({'url':base, 'path':page['structuredContent']['path']}))
 
         def controller_probe(name):
             target = folder / (name + ".json")
+            viewer = (
+                ["--article", "online/shared_v17/coincide.htm", "--pdf", str(folder / "reader.pdf")]
+                if name == "gui-launcher"
+                else []
+            )
             result = subprocess.run(
                 [
                     *(
@@ -345,8 +350,9 @@ print(json.dumps({'url':base, 'path':page['structuredContent']['path']}))
                     str(config),
                     "--report",
                     str(target),
+                    *viewer,
                 ],
-                timeout=80,
+                timeout=170,
             )
             value = json.loads(target.read_text("utf-8"))
             report[name] = value
@@ -356,6 +362,10 @@ print(json.dumps({'url':base, 'path':page['structuredContent']['path']}))
         check(
             result.returncode == 0 and value["state"] == "running" and value["stopped"],
             "actual GUI controller starts and stops its own backend process",
+        )
+        check(
+            all(value.get("viewer", {}).values()) and bool(value.get("viewer")),
+            "actual reader prints PDF, hides to tray with MCP alive, and restores",
         )
         with socket.socket() as occupied:
             occupied.bind(("0.0.0.0", port))

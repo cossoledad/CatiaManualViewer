@@ -118,8 +118,19 @@ def verify_agent_controller(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument("--article", help="also exercise the real reader, PDF and tray")
+    parser.add_argument("--pdf", type=Path)
     args = parser.parse_args(argv)
+    if bool(args.article) != bool(args.pdf):
+        parser.error("--article and --pdf must be used together")
     app = QApplication.instance() or QApplication([])
+
+    def pump_until(predicate, seconds):
+        deadline = time.monotonic() + seconds
+        while not predicate() and time.monotonic() < deadline:
+            app.processEvents()
+            QTest.qWait(30)
+        return bool(predicate())
 
     class Owner(QObject):
         def __init__(self):
@@ -129,8 +140,18 @@ def verify_agent_controller(argv):
         def flush_preferences(self):
             pass
 
-    owner = Owner()
-    controller = AgentController(owner)
+    if args.article:
+        from catia_manual.gui.app import MainWindow
+
+        owner = MainWindow(load_settings(args.config), args.article)
+        owner.show()
+        reader_ready = pump_until(
+            lambda: owner.page_ready and not owner.page_loading and not owner.jobs, 30
+        )
+        controller = owner.agent_controller
+    else:
+        owner = Owner()
+        controller = AgentController(owner)
     controller.start()
     deadline = time.monotonic() + 65
     while controller.state in {"starting", "stopping"} and time.monotonic() < deadline:
@@ -144,12 +165,59 @@ def verify_agent_controller(argv):
         "failure": controller.failure,
         "process_error": controller.process.errorString(),
     }
+    if args.article:
+        import httpx
+
+        args.pdf.parent.mkdir(parents=True, exist_ok=True)
+        owner.pdf_exporter.start(args.pdf)
+        pdf_ready = pump_until(lambda: not owner.pdf_exporter.busy, 65)
+        owner.tray_controller.hide_window()
+        hidden = not owner.isVisible()
+        auth = (
+            {"Authorization": "Bearer " + controller.token()}
+            if owner.settings.agent.get("require_token")
+            else {}
+        )
+        try:
+            health = (
+                httpx.get(
+                    f"http://127.0.0.1:{owner.settings.agent.get('port', 8765)}/health",
+                    headers=auth,
+                    trust_env=False,
+                    timeout=3,
+                ).status_code
+                == 200
+            )
+        except httpx.HTTPError:
+            health = False
+        owner.activate_request({})
+        report["viewer"] = {
+            "reader_ready": reader_ready,
+            "pdf_generated": pdf_ready
+            and args.pdf.is_file()
+            and args.pdf.read_bytes().startswith(b"%PDF-"),
+            "tray_hidden": hidden,
+            "mcp_while_hidden": health,
+            "restored": owner.isVisible() and not owner.isMinimized(),
+        }
     controller.stop()
     deadline = time.monotonic() + 8
     while controller.active and time.monotonic() < deadline:
         app.processEvents()
         QTest.qWait(30)
     report["stopped"] = not controller.active
+    if args.article:
+        pump_until(lambda: not owner.jobs, 10)
+        owner.close()
+        pump_until(lambda: not owner.isVisible(), 10)
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2), "utf-8")
-    return 0 if report["state"] == "running" and report["stopped"] else 1
+    return (
+        0
+        if (
+            report["state"] == "running"
+            and report["stopped"]
+            and all(report.get("viewer", {}).values())
+        )
+        else 1
+    )

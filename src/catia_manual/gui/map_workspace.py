@@ -34,6 +34,7 @@ class MapWorkspace:
         return self.center_stack.currentWidget() in (self.function_map, self.relation_graph)
 
     def map_chrome(self, active):
+        self.pdf_exporter.update_action()
         self.map_button.blockSignals(True)
         relation = active and self.relation_active()
         self.map_button.setChecked(active and not relation)
@@ -41,6 +42,7 @@ class MapWorkspace:
         self.relation_button.setChecked(relation)
         self.relation_button.setEnabled(bool(self.current_document or active))
         self.reading_controls.setVisible(not active)
+        self.pdf_button.setVisible(not active)
         self.focus_button.setVisible(not active)
         self.tools_button.setEnabled(not active)
         self.tools_button.setVisible(not active)
