@@ -208,7 +208,7 @@ def verify_agent_controller(argv):
     report["stopped"] = not controller.active
     if args.article:
         pump_until(lambda: not owner.jobs, 10)
-        owner.close()
+        owner.tray_controller.quit()
         pump_until(lambda: not owner.isVisible(), 10)
     args.report.parent.mkdir(parents=True, exist_ok=True)
     args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2), "utf-8")

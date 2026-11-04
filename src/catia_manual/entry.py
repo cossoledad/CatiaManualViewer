@@ -5,6 +5,17 @@ import sys
 
 
 def main():
+    if sys.argv[1:2] == ["--share-uri"]:
+        # Dedicated OS-handler entry: substitution must never inject other flags.
+        if len(sys.argv) != 3:
+            return 1
+        from catia_manual.core.sharing import PageLink
+
+        try:
+            PageLink.parse(sys.argv[2])
+        except ValueError:
+            return 1
+        sys.argv[1] = "--open"
     if sys.argv[1:2] == ["--agent-service"]:
         from catia_manual.agent.lifecycle import failed_runtime
 

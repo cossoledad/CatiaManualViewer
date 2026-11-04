@@ -133,7 +133,7 @@ except Exception as exc:
 finally:
     if dialog:
         dialog.close()
-    window.close()
+    window.tray_controller.quit()
     wait(lambda: not window.isVisible() and not window.jobs)
     report["passed"] = not report["failures"]
     (output / "transfer-gui.json").write_text(json.dumps(report, indent=2), "utf-8")

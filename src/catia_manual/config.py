@@ -18,7 +18,7 @@ APPEARANCE = {
     "sidebar_sizes": [275, 925, 280],
     "show_tools": True,
     "remember_window": True,
-    "minimize_to_tray": True,
+    "close_behavior": "ask",
     "window_width": 1480,
     "window_height": 940,
     "window_maximized": False,

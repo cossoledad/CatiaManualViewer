@@ -66,6 +66,9 @@ class PdfExporter(QObject):
         action = getattr(self.window, "pdf_action", None)
         if action is not None:
             action.setEnabled(self.available())
+        share = getattr(self.window, "share_action", None)
+        if share is not None:
+            share.setEnabled(self.available())
 
     def start(self, destination=None):
         if not self.available():

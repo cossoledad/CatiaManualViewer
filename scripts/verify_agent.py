@@ -159,9 +159,9 @@ async def protocol():
         tools = (await session.list_tools()).tools
         check(
             {t.name for t in tools}
-            == {"describe_library", "search", "fetch", "browse", "resolve_source"}
+            == {"describe_library", "search", "fetch", "browse", "resolve_source", "resolve_share"}
             and all(t.annotations.readOnlyHint for t in tools),
-            "official MCP client initializes and discovers five read-only tools",
+            "official MCP client initializes and discovers six read-only tools",
         )
         description = await session.call_tool("describe_library")
         check(
@@ -204,6 +204,11 @@ async def protocol():
             "invalid paths are domain errors and do not expose files",
         )
         source = target["source"]
+        shared = await session.call_tool("resolve_share", {"uri": target["share_uri"]})
+        check(
+            not shared.isError and shared.structuredContent["id"],
+            "TCP persistent share resolves into a fresh fetch handle",
+        )
         resolved = await session.call_tool("resolve_source", {"source": source})
         check(
             not resolved.isError and resolved.structuredContent["id"],

@@ -175,38 +175,65 @@ try:
     pid = w.agent_controller.process.processId()
     check(w.tray_controller.available(), "native system tray is available")
     w.showMinimized()
+    QTest.qWait(200)
+    check(w.isVisible() and w.isMinimized(), "minimize retains the ordinary taskbar window")
+    w.tray_controller.restore()
+    w.showMaximized()
+    # Exercise the actual close chooser, including cancel and persisted selection.
+    from PySide6.QtWidgets import QMessageBox
+
+    def choose_close(text, remember=False):
+        dialog = app.activeModalWidget()
+        check(isinstance(dialog, QMessageBox), "close opens the native choice dialog")
+        if remember:
+            dialog.checkBox().setChecked(True)
+        button = next(button for button in dialog.buttons() if button.text() == text)
+        button.click()
+
+    def cancel_close():
+        dialog = app.activeModalWidget()
+        if isinstance(dialog, QMessageBox):
+            dialog.button(QMessageBox.StandardButton.Cancel).click()
+
+    QTimer.singleShot(50, cancel_close)
+    w.close()
+    check(w.isVisible() and not w.tray_controller.quitting, "cancel close preserves the viewer")
+    QTimer.singleShot(80, lambda: choose_close("留在系统托盘", True))
+    w.close()
     wait(lambda: not w.isVisible())
+    check(load_settings(config).appearance["close_behavior"] == "tray", "close preference persists")
     with httpx.Client(trust_env=False, timeout=3) as client:
         check(
             client.get(f"http://127.0.0.1:{port}/health").status_code == 200
             and w.agent_controller.process.processId() == pid,
-            "minimizing hides the window while keeping the same MCP process alive",
+            "closing to tray keeps the same MCP process alive",
         )
     w.tray_controller.tray.activated.emit(QSystemTrayIcon.ActivationReason.Trigger)
     wait(lambda: w.isVisible() and not w.isMinimized())
     w.showMaximized()
     w.showMinimized()
-    wait(lambda: not w.isVisible())
+    w.tray_controller.hide_window()
     w.activate_request({})
     check(
         w.isVisible() and w.isMaximized(), "secondary-instance activation restores maximized state"
     )
-    w.settings = save_settings(w.settings, {"appearance": {"minimize_to_tray": False}})
+    w.settings = save_settings(w.settings, {"appearance": {"close_behavior": "quit"}})
     w.showMinimized()
     QTest.qWait(150)
     check(
         w.isVisible()
         and w.isMinimized()
-        and not load_settings(config).appearance["minimize_to_tray"],
+        and load_settings(config).appearance["close_behavior"] == "quit",
         "ordinary minimization preference persists",
     )
     w.tray_controller.restore()
     original_available = w.tray_controller.available
     w.tray_controller.available = lambda: False
-    w.settings = save_settings(w.settings, {"appearance": {"minimize_to_tray": True}})
+    w.settings = save_settings(w.settings, {"appearance": {"close_behavior": "tray"}})
     w.showMinimized()
     QTest.qWait(150)
     check(w.isVisible(), "missing system tray never makes the window inaccessible")
+    check(w.tray_controller.request_close(), "missing system tray falls back to application exit")
     w.tray_controller.available = original_available
     w.tray_controller.restore()
     w.open_document("online/shared_v17/coincide.htm")
@@ -236,7 +263,7 @@ finally:
         w.agent_controller.stop()
         wait(lambda: not w.agent_controller.active)
     if w.isVisible():
-        w.close()
+        w.tray_controller.quit()
         wait(lambda: not w.jobs and not w.pdf_exporter.busy)
     report["passed"] = not report["failures"]
     (folder / "report.json").write_text(json.dumps(report, ensure_ascii=False, indent=2), "utf-8")

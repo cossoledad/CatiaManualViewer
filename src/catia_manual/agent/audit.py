@@ -12,7 +12,7 @@ from logging.handlers import RotatingFileHandler
 
 from catia_manual import __version__
 
-TOOLS = {"describe_library", "search", "fetch", "browse", "resolve_source"}
+TOOLS = {"describe_library", "search", "fetch", "browse", "resolve_source", "resolve_share"}
 METHODS = {
     "initialize",
     "notifications/initialized",
@@ -36,6 +36,7 @@ ERRORS = {
     "SOURCE_TOO_LARGE",
     "UNKNOWN_SCOPE",
     "INTERNAL_ERROR",
+    "INVALID_SHARE",
 }
 
 
@@ -185,7 +186,9 @@ class CallLog:
             fields = {
                 "request_id": os.urandom(8).hex(),
                 "client": peer,
-                "route": scope.get("path") if scope.get("path") in {"/mcp", "/health"} else "other",
+                "route": scope.get("path")
+                if scope.get("path") in {"/mcp", "/health", "/share"}
+                else "other",
                 "http_method": scope.get("method")
                 if scope.get("method") in {"GET", "POST", "DELETE", "OPTIONS"}
                 else "other",

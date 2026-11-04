@@ -19,7 +19,7 @@ def validate_request(value):
     if not isinstance(value, dict) or set(value) - {"open"}:
         raise ValueError("无效的窗口激活请求")
     for text in value.values():
-        if not isinstance(text, str) or len(text) > 4096:
+        if not isinstance(text, str) or len(text) > 12288:
             raise ValueError("激活请求过长或类型不正确")
         if any(ord(c) < 32 for c in text):
             raise ValueError("激活请求包含控制字符")

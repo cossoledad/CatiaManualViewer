@@ -234,6 +234,7 @@ def test_mcp_http_handshake_tools_and_guard(agent_library, require_token):
                     "fetch",
                     "browse",
                     "resolve_source",
+                    "resolve_share",
                 }
                 assert all(t.annotations.readOnlyHint for t in tools)
                 result = await session.call_tool(

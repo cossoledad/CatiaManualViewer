@@ -56,6 +56,7 @@ from catia_manual.gui.relation_workspace import RelationWorkspace
 from catia_manual.gui.resource_actions import ResourceActions, ResourceBridge
 from catia_manual.gui.search_focus import TERMS_ROLE, SearchFocus, focus_terms, snippet_text
 from catia_manual.gui.settings import GlobalSettings
+from catia_manual.gui.sharing import Sharing
 from catia_manual.gui.status import StatusCenter
 from catia_manual.gui.style import APP_NAME, ASSETS, app_icon
 from catia_manual.gui.widgets import ReaderView
@@ -119,6 +120,7 @@ class ReaderPage(QWebEnginePage):
 
 
 class MainWindow(
+    Sharing,
     RelationWorkspace,
     MapWorkspace,
     SearchFocus,
@@ -678,6 +680,11 @@ class MainWindow(
             self.statusBar().showMessage("该链接暂不可用：" + url.toDisplayString())
 
     def open_target(self, target: str):
+        if target.startswith("catia-manual:") or (
+            QUrl(target).scheme() in {"http", "https"} and QUrl(target).path() == "/share"
+        ):
+            self.open_share_link(target)
+            return
         link = resolve_link(self.settings.root, self.settings.root / self.settings.homepage, target)
         if link.kind == "document" and link.target:
             self.open_document(link.target, link.fragment)
@@ -732,6 +739,7 @@ class MainWindow(
 
     def update_history_actions(self):
         self.pdf_exporter.update_action()
+        self.share_action.setEnabled(self.pdf_exporter.available())
         self.back_action.setEnabled(self.history.can_back)
         self.forward_action.setEnabled(self.history.can_forward)
         self.history_button.setEnabled(self.history.can_back or self.history.can_forward)
@@ -1117,6 +1125,9 @@ class MainWindow(
             tray.on_minimized(event.oldState())
 
     def closeEvent(self, event):
+        if not self.tray_controller.request_close():
+            event.ignore()
+            return
         self.tray_controller.quitting = True
         if self.agent_controller.active:
             if self.agent_controller.state != "stopping":

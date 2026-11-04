@@ -305,7 +305,7 @@ try:
     window.save_relation_location()
     window.flush_relation_state()
     wait(lambda: not window.jobs)
-    window.close()
+    window.tray_controller.quit()
     wait(lambda: not window.isVisible() and not window.jobs)
     window = MainWindow(settings, "online/asmug_C2/main.htm")
     window.show()
@@ -328,7 +328,7 @@ finally:
     window.save_map_location()
     window.flush_map_state()
     wait(lambda: not window.jobs)
-    window.close()
+    window.tray_controller.quit()
     wait(lambda: not window.isVisible() and not window.jobs)
     report["passed"] = not report["failures"]
     (output / "relations-gui.json").write_text(

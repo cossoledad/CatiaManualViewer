@@ -214,7 +214,7 @@ try:
             "disabling call logs persists and disables logging in the backend",
         )
     dialog.close()
-    window.close()
+    window.tray_controller.quit()
     wait(lambda: not window.isVisible() and not controller.active and not window.jobs)
     check(
         not controller.runtime.exists(),
@@ -226,7 +226,7 @@ finally:
     if dialog:
         dialog.close()
     window.agent_controller.stop()
-    window.close()
+    window.tray_controller.quit()
     wait(lambda: not window.isVisible() and not window.agent_controller.active and not window.jobs)
     output = project / "data"
     output.mkdir(exist_ok=True)

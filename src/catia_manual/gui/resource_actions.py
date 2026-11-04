@@ -258,6 +258,7 @@ class ResourceActions:
             if not menu.isEmpty():
                 menu.addSeparator()
             location = self.history.current
+            menu.addAction(self.share_action)
             self.add_original_action(
                 menu, self.current_document.path, location.fragment if location else ""
             )

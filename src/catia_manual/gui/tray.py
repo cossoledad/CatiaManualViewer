@@ -1,8 +1,9 @@
 """Window visibility is independent of the viewer-owned MCP process lifetime."""
 
-from PySide6.QtCore import QObject, Qt, QTimer
-from PySide6.QtWidgets import QMenu, QSystemTrayIcon
+from PySide6.QtCore import QObject, Qt
+from PySide6.QtWidgets import QCheckBox, QMenu, QMessageBox, QSystemTrayIcon
 
+from catia_manual.config import save_settings
 from catia_manual.gui.style import APP_NAME, app_icon, icon
 
 
@@ -44,12 +45,39 @@ class TrayController(QObject):
 
     def on_minimized(self, old_state):
         self.restore_maximized = bool(old_state & Qt.WindowState.WindowMaximized)
-        if self.window.settings.appearance.get("minimize_to_tray", True) and self.available():
-            QTimer.singleShot(0, self.hide_if_minimized)
 
-    def hide_if_minimized(self):
-        if self.window.isMinimized():
+    def request_close(self):
+        if self.quitting:
+            return True
+        behavior = self.window.settings.appearance.get("close_behavior", "ask")
+        if not self.available():
+            # A missing tray must never leave an invisible, inaccessible process.
+            return True
+        if behavior not in {"tray", "quit"}:
+            dialog = QMessageBox(self.window)
+            dialog.setWindowTitle(APP_NAME)
+            dialog.setText("关闭窗口后")
+            tray = dialog.addButton("留在系统托盘", QMessageBox.ButtonRole.AcceptRole)
+            quit_button = dialog.addButton("退出应用", QMessageBox.ButtonRole.DestructiveRole)
+            dialog.addButton(QMessageBox.StandardButton.Cancel)
+            remember = QCheckBox("记住选择")
+            dialog.setCheckBox(remember)
+            dialog.setDefaultButton(tray)
+            dialog.exec()
+            if dialog.clickedButton() not in {tray, quit_button}:
+                return False
+            behavior = "tray" if dialog.clickedButton() == tray else "quit"
+            if remember.isChecked():
+                try:
+                    self.window.settings = save_settings(
+                        self.window.settings, {"appearance": {"close_behavior": behavior}}
+                    )
+                except OSError:
+                    self.window.statusBar().showMessage("未能保存关闭偏好", 4000)
+        if behavior == "tray":
             self.hide_window()
+            return False
+        return True
 
     def restore(self):
         if self.quitting:

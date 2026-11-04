@@ -12,10 +12,11 @@ from contextlib import contextmanager
 from dataclasses import asdict
 
 from catia_manual.core.catalog import ManualCatalog
-from catia_manual.core.library_contract import SourceLocation
+from catia_manual.core.library_contract import DocumentRef, SourceLocation
 from catia_manual.core.parser import ManualParser
 from catia_manual.core.readonly_index import ReadOnlyIndex
 from catia_manual.core.search import SearchService
+from catia_manual.core.sharing import link_for_source, resolve_page_link
 from catia_manual.core.source import resolve_source, source_for_block
 from catia_manual.core.structure import StructureIndex
 from catia_manual.core.terminology import chinese_label
@@ -160,13 +161,16 @@ class AgentKnowledge:
                     "fetch": True,
                     "browse": True,
                     "resolve_source": True,
+                    "resolve_share": True,
                     "images": False,
                     "relations": False,
                     "readonly": True,
                     "online_translation": False,
                     "inference": False,
                 },
-                "reference_lifetime": "本次服务与索引修订；持久引用请保存 SourceLocation",
+                "reference_lifetime": (
+                    "临时 id 绑定本次服务；持久引用请保存 share_uri 或 SourceLocation"
+                ),
             }
 
     def document_ref(self, index, revision, path):
@@ -226,6 +230,7 @@ class AgentKnowledge:
                         "heading_path": hit.heading_path,
                         "snippet": hit.snippet[:600],
                         "source": source,
+                        "share_uri": link_for_source(source) if source else None,
                         "reason": hit.reason,
                         "role": hit.page_role,
                         "placement": hit.placement,
@@ -268,6 +273,7 @@ class AgentKnowledge:
         with self.reader() as (index, revision):
             ref = self.unpack(id, revision)
             document = self.document(index, ref)
+            shared_block = next((b for b in document.blocks if b.id == ref.get("b")), None)
             start, end, offset = 0, len(document.blocks), 0
             if ref["k"] != "document":
                 target = next(
@@ -350,6 +356,14 @@ class AgentKnowledge:
                 else None,
                 "scope": "article" if ref["k"] == "document" else "section",
                 "article_id": self.document_ref(index, revision, document.path),
+                "share_uri": link_for_source(
+                    SourceLocation(
+                        DocumentRef(self.library_id, document.path),
+                        document.content_hash,
+                        fragment=shared_block.fragment if shared_block else ref.get("f", ""),
+                        block_id=ref.get("b", ""),
+                    ).to_dict()
+                ),
                 "links": [
                     {
                         "label": link.label[:240],
@@ -359,6 +373,33 @@ class AgentKnowledge:
                     for link in document_links
                 ],
             }
+
+    def shared_document(self, uri):
+        with self.reader() as (index, revision):
+            try:
+                document, source, same_library = resolve_page_link(index, self.parser, uri)
+            except ValueError as exc:
+                raise AgentError("INVALID_SHARE", str(exc)) from exc
+            except OSError as exc:
+                raise AgentError("SOURCE_NOT_FOUND", "分享原文不存在或不可读") from exc
+            return document, source, same_library, revision
+
+    def resolve_share(self, uri):
+        document, source, same_library, revision = self.shared_document(uri)
+        return {
+            "id": self.pack(
+                revision,
+                "source" if source.block_id else "document",
+                p=document.path,
+                h=document.content_hash,
+                b=source.block_id,
+                f=source.fragment,
+            ),
+            "title": document.title,
+            "source": source.to_dict(),
+            "share_uri": link_for_source(source.to_dict()),
+            "same_library": same_library,
+        }
 
     def browse(self, id=None, offset=0, limit=20):
         integer(offset, 0, 100000, "offset")

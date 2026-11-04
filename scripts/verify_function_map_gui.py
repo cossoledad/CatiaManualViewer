@@ -273,7 +273,7 @@ try:
     window.flush_map_state()
     wait(lambda: not window.jobs)
     expected = canvas.state()["viewport"]["zoom"]
-    window.close()
+    window.tray_controller.quit()
     wait(lambda: not window.isVisible() and not window.jobs)
     window = MainWindow(settings)
     window.show()
@@ -325,7 +325,7 @@ finally:
     window.save_map_location()
     window.flush_map_state()
     wait(lambda: not window.jobs)
-    window.close()
+    window.tray_controller.quit()
     wait(lambda: not window.isVisible() and not window.jobs)
     app.processEvents()
     report["passed"] = not report["failures"]
